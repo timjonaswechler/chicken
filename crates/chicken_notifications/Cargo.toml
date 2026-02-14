@@ -1,0 +1,21 @@
+[package]
+name = "chicken_notifications"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+authors.workspace = true
+
+
+[dependencies]
+bevy = { workspace = true, features= ["bevy_log"]}
+bevy_egui = { workspace = true, optional = true }
+serde = { workspace = true, features = ["derive"] }
+
+
+[features]
+default = []
+debug = ["bevy_egui"]
+
+[lints]
+workspace = true

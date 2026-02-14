@@ -1,0 +1,18 @@
+use crate::i_key_sort::sort::two_keys_cmp::TwoKeysAndCmpSort;
+use crate::i_overlay::segm::segment::Segment;
+
+pub(crate) trait ShapeSegmentsSort {
+    fn sort_by_ab(&mut self, parallel: bool);
+}
+
+impl<C: Send + Sync + Copy> ShapeSegmentsSort for [Segment<C>] {
+    #[inline]
+    fn sort_by_ab(&mut self, parallel: bool) {
+        self.sort_by_two_keys_then_by(
+            parallel,
+            |s| s.x_segment.a.x,
+            |s| s.x_segment.a.y,
+            |s0, s1| s0.x_segment.b.cmp(&s1.x_segment.b),
+        )
+    }
+}

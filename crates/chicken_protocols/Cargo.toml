@@ -1,0 +1,23 @@
+[package]
+name = "chicken_protocols"
+version = "0.2.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+authors.workspace = true
+
+
+
+[dependencies]
+bevy = { workspace = true,  features = ["serialize","bevy_log"] }
+bevy_replicon = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+
+
+[features]
+default = []
+server = ["bevy_replicon/server"]
+client = ["bevy_replicon/client"]
+
+[lints]
+workspace = true

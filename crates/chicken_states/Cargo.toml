@@ -1,0 +1,20 @@
+[package]
+name = "chicken_states"
+version = "0.1.2"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+authors.workspace = true
+
+
+[dependencies]
+bevy = {workspace=true, features= ["bevy_log", "bevy_state", "keyboard"]}
+serde = { workspace = true, features = ["derive"] }
+
+[features]
+default = ["client", "server"]
+client = []
+server = []
+
+[lints]
+workspace = true

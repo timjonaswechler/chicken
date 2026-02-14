@@ -43,8 +43,6 @@
 //! Bevy idiomatic way:
 //!
 
-use std::{ops::Deref, sync::Mutex};
-
 use bevy::app::{App, First, Plugin};
 use bevy::ecs::{
     message::Message,
@@ -52,32 +50,34 @@ use bevy::ecs::{
     schedule::{IntoScheduleConfigs, SystemSet},
     system::Res,
 };
+use bevy::log::error;
+use chicken_identity::PlayerIdentity;
+use std::{ops::Deref, sync::Mutex};
 
 // Reexport everything from steamworks except for the clients
 pub use steamworks::{
-    networking_messages, networking_sockets, networking_types, networking_utils,
-    restart_app_if_necessary, stats, AccountId, AppIDs, AppId, Apps, AuthSessionError,
-    AuthSessionTicketResponse, AuthSessionValidateError, AuthTicket, Callback, CallbackHandle,
-    CallbackResult, ChatMemberStateChange, ComparisonFilter, CreateQueryError, DistanceFilter,
-    DownloadItemResult, FileType, FloatingGamepadTextInputDismissed, FloatingGamepadTextInputMode,
-    Friend, FriendFlags, FriendGame, FriendState, Friends, GameId, GameLobbyJoinRequested,
-    GameOverlayActivated, GamepadTextInputDismissed, GamepadTextInputLineMode,
-    GamepadTextInputMode, Input, InstallInfo, InvalidErrorCode, ItemState, Leaderboard,
-    LeaderboardDataRequest, LeaderboardDisplayType, LeaderboardEntry, LeaderboardScoreUploaded,
-    LeaderboardSortMethod, LobbyChatUpdate, LobbyDataUpdate, LobbyId, LobbyKey,
-    LobbyKeyTooLongError, LobbyListFilter, LobbyType, Matchmaking, MicroTxnAuthorizationResponse,
-    NearFilter, NearFilters, Networking, NotificationPosition, NumberFilter, NumberFilters,
-    OverlayToStoreFlag, P2PSessionConnectFail, P2PSessionRequest, PersonaChange,
-    PersonaStateChange, PublishedFileId, PublishedFileVisibility, QueryHandle, QueryResult,
-    QueryResults, RemotePlay, RemotePlayConnected, RemotePlayDisconnected, RemotePlaySession,
-    RemotePlaySessionId, RemoteStorage, SIResult, SResult, SendType, Server, ServerMode,
-    SteamAPIInitError, SteamDeviceFormFactor, SteamError, SteamFile, SteamFileInfo,
-    SteamFileReader, SteamFileWriter, SteamId, SteamServerConnectFailure, SteamServersConnected,
-    SteamServersDisconnected, StringFilter, StringFilterKind, StringFilters,
-    TicketForWebApiResponse, UGCContentDescriptorID, UGCQueryType, UGCStatisticType, UGCType,
+    AccountId, AppIDs, AppId, Apps, AuthSessionError, AuthSessionTicketResponse,
+    AuthSessionValidateError, AuthTicket, Callback, CallbackHandle, CallbackResult,
+    ChatMemberStateChange, ComparisonFilter, CreateQueryError, DistanceFilter, DownloadItemResult,
+    FileType, FloatingGamepadTextInputDismissed, FloatingGamepadTextInputMode, Friend, FriendFlags,
+    FriendGame, FriendState, Friends, GameId, GameLobbyJoinRequested, GameOverlayActivated,
+    GamepadTextInputDismissed, GamepadTextInputLineMode, GamepadTextInputMode, Input, InstallInfo,
+    InvalidErrorCode, ItemState, Leaderboard, LeaderboardDataRequest, LeaderboardDisplayType,
+    LeaderboardEntry, LeaderboardScoreUploaded, LeaderboardSortMethod, LobbyChatUpdate,
+    LobbyDataUpdate, LobbyId, LobbyKey, LobbyKeyTooLongError, LobbyListFilter, LobbyType,
+    Matchmaking, MicroTxnAuthorizationResponse, NearFilter, NearFilters, Networking,
+    NotificationPosition, NumberFilter, NumberFilters, OverlayToStoreFlag, P2PSessionConnectFail,
+    P2PSessionRequest, PersonaChange, PersonaStateChange, PublishedFileId, PublishedFileVisibility,
+    QueryHandle, QueryResult, QueryResults, RESULTS_PER_PAGE, RemotePlay, RemotePlayConnected,
+    RemotePlayDisconnected, RemotePlaySession, RemotePlaySessionId, RemoteStorage, SIResult,
+    SResult, SendType, Server, ServerMode, SteamAPIInitError, SteamDeviceFormFactor, SteamError,
+    SteamFile, SteamFileInfo, SteamFileReader, SteamFileWriter, SteamId, SteamServerConnectFailure,
+    SteamServersConnected, SteamServersDisconnected, StringFilter, StringFilterKind, StringFilters,
+    TicketForWebApiResponse, UGC, UGCContentDescriptorID, UGCQueryType, UGCStatisticType, UGCType,
     UpdateHandle, UpdateStatus, UpdateWatchHandle, UploadScoreMethod, User, UserAchievementStored,
     UserList, UserListOrder, UserStats, UserStatsReceived, UserStatsStored, Utils,
-    ValidateAuthTicketResponse, RESULTS_PER_PAGE, UGC,
+    ValidateAuthTicketResponse, networking_messages, networking_sockets, networking_types,
+    networking_utils, restart_app_if_necessary, stats,
 };
 
 /// A Bevy-compatible wrapper around various Steamworks events.
@@ -176,6 +176,10 @@ impl Plugin for SteamworksPlugin {
                     .in_set(SteamworksSystem::RunCallbacks)
                     .before(bevy::ecs::message::MessageUpdateSystems),
             );
+
+        let identity =
+            PlayerIdentity::steam(client.user().steam_id().raw(), client.friends().name());
+        app.insert_resource(identity);
     }
 }
 

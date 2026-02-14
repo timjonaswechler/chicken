@@ -1,3 +1,2 @@
 # TODO:
-- Mermaid diagram
-- Steam ID auslesen
+ Steam ID in Blacklist / whitelist handeling nutzen.

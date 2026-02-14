@@ -11,6 +11,9 @@ authors.workspace = true
 [dependencies]
 bevy = { workspace = true,  features = ["serialize","bevy_log"] }
 bevy_replicon = { workspace = true }
+
+chicken_identity = { workspace = true }
+
 serde = { workspace = true, features = ["derive"] }
 
 

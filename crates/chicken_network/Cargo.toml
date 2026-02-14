@@ -13,10 +13,12 @@ aeronet_io = { workspace = true }
 aeronet_channel = { workspace = true }
 aeronet_replicon = { workspace = true, features = ["server"] }
 aeronet_webtransport = { workspace = true, features = ["server", "dangerous-configuration"] }
+aeronet_steam = { workspace = true }
 
 bevy = { workspace = true, features= ["bevy_log"]}
 bevy_replicon = { workspace = true }
 
+chicken_identity = { workspace = true }
 chicken_states = { workspace = true }
 chicken_notifications = { workspace = true }
 chicken_exitcodes = { workspace = true }

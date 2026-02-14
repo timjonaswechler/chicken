@@ -1,8 +1,10 @@
-pub mod steamworks;
-
 // include all expect of plugin
 pub mod network {
     pub use chicken_network::*;
+}
+
+pub mod identity {
+    pub use chicken_identity::*;
 }
 
 pub mod states {
@@ -26,6 +28,9 @@ pub mod settings {
 
     pub use chicken_settings_content::{SettingsContent, networking::NetworkingSettings};
 }
+pub mod steam {
+    pub use chicken_steam::*;
+}
 
 use bevy::prelude::*;
 use chicken_settings::SettingsAppExt;
@@ -42,6 +47,11 @@ impl Plugin for ChickenPlugin {
             chicken_protocols::ProtocolPlugin,
         ))
         .add_settings::<settings::SettingsContent>()
-        .add_settings::<settings::NetworkingSettings>();
+        .add_settings::<settings::NetworkingSettings>()
+        .add_systems(Startup, test_identity);
     }
+}
+
+fn test_identity(identity: Res<identity::PlayerIdentity>) {
+    error!("Identity: {:?}", identity);
 }

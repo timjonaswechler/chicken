@@ -21,6 +21,7 @@ use {
             SessionRequest, WebTransportServer, WebTransportServerClient, WebTransportServerPlugin,
         },
     },
+    bevy::app::AppExit,
     bevy::prelude::*,
     bevy_replicon::{server::ServerSystems, shared::message::client_message::FromClient},
     chicken_notifications::Notify,
@@ -60,8 +61,7 @@ impl Plugin for ServerLogicPlugin {
                     .after(ServerSystems::Receive)
                     .run_if(in_state(ServerVisibility::Public)),
             )
-            .add_observer(on_server_session_request)
-            .add_observer(on_server_client_disconnected);
+            .add_systems(Last, on_app_exit_notify_clients);
     }
 }
 
@@ -163,7 +163,9 @@ fn on_server_going_public(
         .spawn((Name::new("WebTransportServer"), AeronetRepliconServer))
         .queue(WebTransportServer::open(config))
         .observe(on_server_is_public)
-        .observe(on_check_is_server_private);
+        .observe(on_check_is_server_private)
+        .observe(on_server_session_request)
+        .observe(on_server_client_disconnected);
 }
 
 fn on_server_is_public(_: On<Add, Server>, mut next_state: ResMut<NextState<ServerVisibility>>) {
@@ -225,20 +227,6 @@ fn on_server_going_private(
     }
 }
 
-fn check_is_server_private(
-    mut commands: Commands,
-    server_query: Query<Entity, (With<Server>, With<ServerEndpoint>)>,
-) {
-    if server_query.is_empty() {
-        {
-            info!("Closed is triggered");
-            commands.trigger(SetServerVisibility {
-                transition: ServerVisibility::Private,
-            });
-        }
-    }
-}
-
 fn on_check_is_server_private(_: On<Closed>, mut commands: Commands) {
     info!("Closed is triggered");
     commands.trigger(SetServerVisibility {
@@ -295,8 +283,20 @@ fn on_server_client_graceful_disconnect(client: Entity, msg: &str) {
     // TODO: Save player state, clean up entity immediately
 }
 
-fn on_server_shutdown_notify_clients() {
-    todo!("Implement on_server_shutdown_notify_clients")
+fn on_app_exit_notify_clients(
+    mut app_exit_events: MessageReader<AppExit>,
+    mut commands: Commands,
+    client_query: Query<Entity, With<WebTransportServerClient>>,
+) {
+    if app_exit_events.read().next().is_some() {
+        let client_count = client_query.iter().count();
+        if client_count > 0 {
+            info!("Notifying {} clients of server shutdown", client_count);
+            for client in client_query.iter() {
+                commands.trigger(Disconnect::new(client, "Server shutting down"));
+            }
+        }
+    }
 }
 
 pub mod helpers {

@@ -1,25 +1,24 @@
 use {
     crate::{
         events::{
-            app::ChangeAppScope,
             menu::PauseMenuEvent,
             session::{
-                SetClientShutdownStep, SetClientStatus, SetSingleplayerShutdownStep,
-                SetSingleplayerStatus,
+                SetClientConnectionStatus, SetConnectingStep, SetDisconnectingStep,
+                SetServerShutdownStep, SetServerStatus, SetSyncingStep,
             },
         },
         states::{
             app::AppScope,
             menu::{PauseMenu, main::MainMenuContext},
             session::{
-                ClientShutdownStep, ClientStatus, SessionState, SessionType,
-                SingleplayerShutdownStep, SingleplayerStatus,
+                ClientConnectionStatus, ConnectingStep, DisconnectingStep, ServerShutdownStep,
+                ServerStatus, SessionState, SessionType, SyncingStep,
             },
         },
     },
     bevy::prelude::{
         App, AppExtStates, ButtonInput, IntoScheduleConfigs, KeyCode, NextState, On, Plugin, Res,
-        ResMut, State, SystemCondition, Update, in_state,
+        ResMut, State, SystemCondition, Update, in_state, warn,
     },
 };
 
@@ -27,41 +26,28 @@ pub struct ClientSessionPlugin;
 
 impl Plugin for ClientSessionPlugin {
     fn build(&self, app: &mut App) {
-        app.add_sub_state::<ClientStatus>()
-            .add_sub_state::<ClientShutdownStep>()
-            .add_sub_state::<SingleplayerStatus>()
-            .add_sub_state::<SingleplayerShutdownStep>()
+        app.init_state::<SessionType>()
+
+            .add_sub_state::<ClientConnectionStatus>()
+            .add_sub_state::<ConnectingStep>()
+            .add_sub_state::<SyncingStep>()
+            .add_sub_state::<DisconnectingStep>()
             .add_sub_state::<PauseMenu>()
-            .init_state::<SessionType>() // Used internally by client to know mode
-            .add_observer(on_client_state_event)
-            .add_observer(on_set_client_shutdown_step)
-            .add_observer(on_set_singleplayer_status)
-            .add_observer(on_set_singleplayer_shutdown_step)
-            .add_observer(handle_pause_menu_nav)
-            .add_observer(on_change_app_scope)
+
+            .add_observer(on_client_connection_status_event)
+            .add_observer(on_connecting_step)
+            .add_observer(on_syncing_step)
+            .add_observer(on_set_disconnecting_step)
+            .add_observer(on_set_server_status)
+            .add_observer(on_set_server_shutdown_step)
+            .add_observer(handle_pause_menu_nav) // TODO: evtl. falscher platz.
             .add_systems(
                 Update,
-                toggle_game_menu
+                toggle_game_menu // TODO: evtl. falscher platz.
                     .run_if(in_state(SessionState::Active).or(in_state(SessionState::Paused))),
             );
     }
 }
-
-// --- App Scope Logic (moved from app.rs) ---
-fn on_change_app_scope(
-    event: On<ChangeAppScope>,
-    mut state: ResMut<NextState<AppScope>>,
-    mut session_type: ResMut<NextState<SessionType>>,
-    mut menu_state: ResMut<NextState<MainMenuContext>>,
-) {
-    if event.transition == AppScope::Menu {
-        state.set(AppScope::Menu);
-        session_type.set(SessionType::None);
-        menu_state.set(MainMenuContext::Main);
-    }
-}
-
-// --- Pause Menu Logic ---
 
 fn toggle_game_menu(
     current_state: Res<State<SessionState>>,
@@ -82,9 +68,9 @@ fn handle_pause_menu_nav(
     mut next_pause_menu: ResMut<NextState<PauseMenu>>,
     mut next_session_state: ResMut<NextState<SessionState>>,
     session_type: Res<State<SessionType>>,
-    mut next_client_status: ResMut<NextState<ClientStatus>>,
-    mut next_sp_status: ResMut<NextState<SingleplayerStatus>>,
-    mut next_singleplayer_shutdown_step: ResMut<NextState<SingleplayerShutdownStep>>,
+    mut next_client_status: ResMut<NextState<ClientConnectionStatus>>,
+    mut next_server_status: ResMut<NextState<ServerStatus>>,
+    mut next_server_shutdown_step: ResMut<NextState<ServerShutdownStep>>,
 ) {
     match trigger.event() {
         PauseMenuEvent::Resume => {
@@ -101,72 +87,166 @@ fn handle_pause_menu_nav(
         }
         PauseMenuEvent::Exit => match session_type.get() {
             SessionType::Singleplayer => {
-                next_sp_status.set(SingleplayerStatus::Stopping);
-                next_singleplayer_shutdown_step
-                    .set(SingleplayerShutdownStep::DisconnectRemoteClients);
+                next_server_status.set(ServerStatus::Stopping);
+                next_server_shutdown_step.set(ServerShutdownStep::SaveWorld);
             }
             SessionType::Client => {
-                next_client_status.set(ClientStatus::Disconnecting);
+                next_client_status.set(ClientConnectionStatus::Disconnecting);
             }
             SessionType::None => {}
+            #[cfg(feature = "headless")]
+            SessionType::DedicatedServer => {}
         },
     }
 }
 
-// --- Client Network Logic ---
+fn is_valid_client_connection_transition(
+    from: &ClientConnectionStatus,
+    to: &ClientConnectionStatus,
+) -> bool {
+    matches!(
+        (from, to),
+        (
+            ClientConnectionStatus::Disconnected,
+            ClientConnectionStatus::Connecting
+        ) | (
+            ClientConnectionStatus::Connecting,
+            ClientConnectionStatus::Connected
+        ) | (
+            ClientConnectionStatus::Connecting,
+            ClientConnectionStatus::Disconnected
+        ) | (
+            ClientConnectionStatus::Connected,
+            ClientConnectionStatus::Syncing
+        ) | (
+            ClientConnectionStatus::Syncing,
+            ClientConnectionStatus::Playing
+        ) | (
+            ClientConnectionStatus::Playing,
+            ClientConnectionStatus::Disconnecting
+        ) | (
+            ClientConnectionStatus::Disconnecting,
+            ClientConnectionStatus::Disconnected
+        )
+    )
+}
 
-fn on_client_state_event(
-    event: On<SetClientStatus>,
+fn on_client_connection_status_event(
+    event: On<SetClientConnectionStatus>,
     mut next_app_scope: ResMut<NextState<AppScope>>,
     mut next_session_type: ResMut<NextState<SessionType>>,
     mut next_session_state: ResMut<NextState<SessionState>>,
-    mut next_state: ResMut<NextState<ClientStatus>>,
+    mut next_state: ResMut<NextState<ClientConnectionStatus>>,
+    current: Res<State<ClientConnectionStatus>>,
 ) {
-    match *event {
-        SetClientStatus::Transition(ClientStatus::Connecting) => {
-            next_state.set(ClientStatus::Connecting);
+    if !is_valid_client_connection_transition(current.get(), &event.transition) {
+        warn!(
+            "Unexpected ClientConnectionStatus transition: {:?} -> {:?}",
+            current.get(),
+            event.transition
+        );
+    }
+
+    match event.transition {
+        ClientConnectionStatus::Connecting => {
+            next_state.set(ClientConnectionStatus::Connecting);
             next_session_type.set(SessionType::Client);
         }
-        SetClientStatus::Transition(ClientStatus::Connected) => {
-            next_state.set(ClientStatus::Connected);
+        ClientConnectionStatus::Connected => {
+            next_state.set(ClientConnectionStatus::Connected);
         }
-        SetClientStatus::Transition(ClientStatus::Syncing) => {
-            next_state.set(ClientStatus::Syncing);
+        ClientConnectionStatus::Syncing => {
+            next_state.set(ClientConnectionStatus::Syncing);
             next_app_scope.set(AppScope::Session);
         }
-        SetClientStatus::Transition(ClientStatus::Running) => {
-            next_state.set(ClientStatus::Running);
+        ClientConnectionStatus::Playing => {
+            next_state.set(ClientConnectionStatus::Playing);
             next_session_state.set(SessionState::Active);
         }
-        SetClientStatus::Transition(ClientStatus::Disconnecting) => {
-            next_state.set(ClientStatus::Disconnecting);
+        ClientConnectionStatus::Disconnecting => {
+            next_state.set(ClientConnectionStatus::Disconnecting);
         }
-
-        SetClientStatus::Failed => {
-            next_session_type.set(SessionType::None);
+        ClientConnectionStatus::Disconnected => {
+            next_state.set(ClientConnectionStatus::Disconnected);
         }
     }
 }
 
-fn on_set_client_shutdown_step(
-    event: On<SetClientShutdownStep>,
-    shutdown_state: Res<State<ClientShutdownStep>>,
+fn on_connecting_step(
+    event: On<SetConnectingStep>,
+    current: Res<State<ConnectingStep>>,
+    mut next_state: ResMut<NextState<ConnectingStep>>,
+    mut next_client_status: ResMut<NextState<ClientConnectionStatus>>,
+) {
+    match *event.event() {
+        SetConnectingStep::Start => {
+            next_state.set(ConnectingStep::ResolveAddress);
+        }
+        SetConnectingStep::Next => match current.get() {
+            ConnectingStep::ResolveAddress => next_state.set(ConnectingStep::OpenSocket),
+            ConnectingStep::OpenSocket => next_state.set(ConnectingStep::SendHandshake),
+            ConnectingStep::SendHandshake => next_state.set(ConnectingStep::WaitForAccept),
+            ConnectingStep::WaitForAccept => next_state.set(ConnectingStep::Ready),
+            ConnectingStep::Ready => {}
+        },
+        SetConnectingStep::Done => {
+            next_client_status.set(ClientConnectionStatus::Connected);
+        }
+        SetConnectingStep::Failed => {
+            next_client_status.set(ClientConnectionStatus::Disconnected);
+        }
+    }
+}
+
+fn on_syncing_step(
+    event: On<SetSyncingStep>,
+    current: Res<State<SyncingStep>>,
+    mut next_state: ResMut<NextState<SyncingStep>>,
+    mut next_client_status: ResMut<NextState<ClientConnectionStatus>>,
+) {
+    match *event.event() {
+        SetSyncingStep::Start => {
+            next_state.set(SyncingStep::RequestWorld);
+        }
+        SetSyncingStep::Next => match current.get() {
+            SyncingStep::RequestWorld => next_state.set(SyncingStep::ReceiveChunks),
+            SyncingStep::ReceiveChunks => next_state.set(SyncingStep::SpawnEntities),
+            SyncingStep::SpawnEntities => next_state.set(SyncingStep::Ready),
+            SyncingStep::Ready => {}
+        },
+        SetSyncingStep::Done => {
+            next_client_status.set(ClientConnectionStatus::Playing);
+        }
+    }
+}
+
+fn on_set_disconnecting_step(
+    event: On<SetDisconnectingStep>,
+    shutdown_state: Res<State<DisconnectingStep>>,
     mut next_main_menu: ResMut<NextState<MainMenuContext>>,
     mut next_app_scope: ResMut<NextState<AppScope>>,
-    mut next_state: ResMut<NextState<ClientShutdownStep>>,
+    mut next_state: ResMut<NextState<DisconnectingStep>>,
     mut next_session_type: ResMut<NextState<SessionType>>,
+    mut next_client_status: ResMut<NextState<ClientConnectionStatus>>,
 ) {
     match *event {
-        SetClientShutdownStep::Start => {
-            next_state.set(ClientShutdownStep::DisconnectFromServer);
+        SetDisconnectingStep::Start => {
+            next_state.set(DisconnectingStep::SendDisconnect);
         }
-        SetClientShutdownStep::Next => match **shutdown_state {
-            ClientShutdownStep::DisconnectFromServer => {
-                next_state.set(ClientShutdownStep::DespawnLocalClient);
+        SetDisconnectingStep::Next => match **shutdown_state {
+            DisconnectingStep::SendDisconnect => {
+                next_state.set(DisconnectingStep::WaitForAck);
             }
-            ClientShutdownStep::DespawnLocalClient => {}
+            DisconnectingStep::WaitForAck => {
+                next_state.set(DisconnectingStep::Cleanup);
+            }
+            DisconnectingStep::Cleanup => {
+                next_state.set(DisconnectingStep::Ready);
+            }
+            DisconnectingStep::Ready => {}
         },
-        SetClientShutdownStep::Done => {
+        SetDisconnectingStep::Done => {
+            next_client_status.set(ClientConnectionStatus::Disconnected);
             next_app_scope.set(AppScope::Menu);
             next_main_menu.set(MainMenuContext::Main);
             next_session_type.set(SessionType::None);
@@ -174,57 +254,77 @@ fn on_set_client_shutdown_step(
     }
 }
 
-// --- Singleplayer Logic ---
+fn is_valid_server_status_transition(from: &ServerStatus, to: &ServerStatus) -> bool {
+    matches!(
+        (from, to),
+        (ServerStatus::Offline, ServerStatus::Starting)
+            | (ServerStatus::Starting, ServerStatus::Running)
+            | (ServerStatus::Starting, ServerStatus::Offline)
+            | (ServerStatus::Running, ServerStatus::Stopping)
+            | (ServerStatus::Stopping, ServerStatus::Offline)
+    )
+}
 
-fn on_set_singleplayer_status(
-    event: On<SetSingleplayerStatus>,
+fn on_set_server_status(
+    event: On<SetServerStatus>,
     mut next_app_scope: ResMut<NextState<AppScope>>,
     mut next_session_state: ResMut<NextState<SessionState>>,
-    mut next_state: ResMut<NextState<SingleplayerStatus>>,
+    mut next_state: ResMut<NextState<ServerStatus>>,
+    current: Res<State<ServerStatus>>,
 ) {
+    if !is_valid_server_status_transition(current.get(), &event.transition) {
+        warn!(
+            "Unexpected ServerStatus transition: {:?} -> {:?}",
+            current.get(),
+            event.transition
+        );
+    }
+
     match event.transition {
-        SingleplayerStatus::Running => {
-            next_state.set(SingleplayerStatus::Running);
+        ServerStatus::Running => {
+            next_state.set(ServerStatus::Running);
             next_app_scope.set(AppScope::Session);
             next_session_state.set(SessionState::Active);
         }
-        SingleplayerStatus::Stopping => {
-            next_state.set(SingleplayerStatus::Stopping);
+        ServerStatus::Stopping => {
+            next_state.set(ServerStatus::Stopping);
         }
-        SingleplayerStatus::Starting => {
-            next_state.set(SingleplayerStatus::Starting);
+        ServerStatus::Starting => {
+            next_state.set(ServerStatus::Starting);
+        }
+        ServerStatus::Offline => {
+            next_state.set(ServerStatus::Offline);
         }
     }
 }
 
-fn on_set_singleplayer_shutdown_step(
-    event: On<SetSingleplayerShutdownStep>,
-    shutdown_state: Res<State<SingleplayerShutdownStep>>,
+fn on_set_server_shutdown_step(
+    event: On<SetServerShutdownStep>,
+    shutdown_state: Res<State<ServerShutdownStep>>,
     mut next_main_menu: ResMut<NextState<MainMenuContext>>,
     mut next_app_scope: ResMut<NextState<AppScope>>,
-    mut next_state: ResMut<NextState<SingleplayerShutdownStep>>,
+    mut next_state: ResMut<NextState<ServerShutdownStep>>,
     mut next_session_type: ResMut<NextState<SessionType>>,
+    mut next_server_status: ResMut<NextState<ServerStatus>>,
 ) {
     match *event {
-        SetSingleplayerShutdownStep::Start => {
-            next_state.set(SingleplayerShutdownStep::DisconnectRemoteClients);
+        SetServerShutdownStep::Start => {
+            next_state.set(ServerShutdownStep::SaveWorld);
         }
-        SetSingleplayerShutdownStep::Next => match **shutdown_state {
-            SingleplayerShutdownStep::DisconnectRemoteClients => {
-                next_state.set(SingleplayerShutdownStep::CloseRemoteServer);
+        SetServerShutdownStep::Next => match **shutdown_state {
+            ServerShutdownStep::SaveWorld => {
+                next_state.set(ServerShutdownStep::DisconnectClients);
             }
-            SingleplayerShutdownStep::CloseRemoteServer => {
-                next_state.set(SingleplayerShutdownStep::DespawnBots);
+            ServerShutdownStep::DisconnectClients => {
+                next_state.set(ServerShutdownStep::DespawnLocalClient);
             }
-            SingleplayerShutdownStep::DespawnBots => {
-                next_state.set(SingleplayerShutdownStep::DespawnLocalClient);
+            ServerShutdownStep::DespawnLocalClient => {
+                next_state.set(ServerShutdownStep::Cleanup);
             }
-            SingleplayerShutdownStep::DespawnLocalClient => {
-                next_state.set(SingleplayerShutdownStep::DespawnLocalServer);
-            }
-            SingleplayerShutdownStep::DespawnLocalServer => {}
+            ServerShutdownStep::Cleanup => {}
         },
-        SetSingleplayerShutdownStep::Done => {
+        SetServerShutdownStep::Done => {
+            next_server_status.set(ServerStatus::Offline);
             next_app_scope.set(AppScope::Menu);
             next_main_menu.set(MainMenuContext::Main);
             next_session_type.set(SessionType::None);

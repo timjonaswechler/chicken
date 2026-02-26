@@ -12,9 +12,9 @@ bevy = {workspace=true, features= ["bevy_log", "bevy_state", "keyboard"]}
 serde = { workspace = true, features = ["derive"] }
 
 [features]
-default = ["client", "server"]
-client = []
-server = []
+default = ["hosted"]
+hosted = []
+headless = []
 
 [lints]
 workspace = true

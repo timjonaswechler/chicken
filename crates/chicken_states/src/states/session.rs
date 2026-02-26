@@ -19,125 +19,241 @@ pub enum SessionState {
 
     /// In-Game Pause Menu (Client only).
     /// Physics might be paused here.
-    #[cfg(feature = "client")]
+    #[cfg(feature = "hosted")]
     Paused,
 }
 
 /// Defines the type of session.
-#[cfg(feature = "client")]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, States, Reflect)]
+#[derive(States, Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Reflect)]
 pub enum SessionType {
     /// This is active if there is no active game running, for example when the game is in the main menu.
     #[default]
     None,
 
     /// This Type is active if the game is in a singleplayer session or multiplayer session where the user is the host.
+    #[cfg(feature = "hosted")]
     Singleplayer,
 
     /// Client is active if the game is connected to a multiplayer session where the user is a client.
+    #[cfg(feature = "hosted")]
     Client,
+
+    /// DedicatedServer is active when running as a dedicated server without a local client.
+    #[cfg(feature = "headless")]
+    DedicatedServer,
 }
 
-// --- Client Specific Session States ---
+// --- Server Status (Singleplayer & DedicatedServer) ---
 
-/// Defines the State of the client.
-#[cfg(feature = "client")]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, SubStates, Reflect)]
-#[source(SessionType = SessionType::Client)]
-pub enum ClientStatus {
-    /// If the Clients starts it is always first in a connecting state.
-    #[default]
-    Connecting,
-
-    /// If the connecting is successful the client switches to the connected state.
-    Connected,
-
-    /// When the client is connected the next state is always syncing data from the server to the client.
-    Syncing,
-
-    /// Is all in sync, the client switches to the running state. In this state the client is ready to send and receive data (Gameplay Loop)
-    Running,
-
-    /// When the user wants to disconnect from the server or the server sends a disconnect message, the client switches to the disconnecting state.
-    Disconnecting,
-}
-
-/// In disconnecting phase the clients steps through the shutdown steps. This steps are defined here.
-#[cfg(feature = "client")]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, SubStates, Reflect)]
-#[source(ClientStatus = ClientStatus::Disconnecting)]
-pub enum ClientShutdownStep {
-    /// First the client disconnects from the server.
-    #[default]
-    DisconnectFromServer,
-
-    /// Then the client despawns the local client entity.
-    DespawnLocalClient,
-}
-
-// --- Singleplayer Specific Session States ---
-
-/// Tracks the lifecycle state of a singleplayer game session.
+/// Tracks the lifecycle state of a server session.
 ///
 /// This state machine manages the startup, active gameplay, and shutdown phases
-/// of a local singleplayer session. Only active when `SessionType` is `Singleplayer`.
-#[cfg(feature = "client")]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, SubStates, Reflect)]
+/// of both singleplayer (local) and dedicated server sessions.
+/// Active when `SessionType` is `Singleplayer` or `DedicatedServer`.
+#[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Reflect)]
+#[cfg(feature = "hosted")]
 #[source(SessionType = SessionType::Singleplayer)]
-pub enum SingleplayerStatus {
-    /// Initial startup phase: loading world, spawning entities, initializing systems.
+pub enum ServerStatus {
+    /// Server is not running; no active game session.
     #[default]
+    Offline,
+    /// Server is starting up: loading world, spawning entities, initializing systems.
     Starting,
-    /// Active gameplay phase: physics running, player input processed, game logic executing.
+    /// Server is running: physics active, accepting connections, processing gameplay.
     Running,
-    /// Shutdown phase: cleaning up entities, saving game state, releasing resources.
+    /// Server is shutting down: saving state, disconnecting clients, releasing resources.
+    Stopping,
+}
+#[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Reflect)]
+#[cfg(feature = "headless")]
+#[source(SessionType = SessionType::DedicatedServer)]
+pub enum ServerStatus {
+    /// Server is not running; no active game session.
+    #[default]
+    Offline,
+    /// Server is starting up: loading world, spawning entities, initializing systems.
+    Starting,
+    /// Server is running: physics active, accepting connections, processing gameplay.
+    Running,
+    /// Server is shutting down: saving state, disconnecting clients, releasing resources.
     Stopping,
 }
 
-/// Defines the ordered shutdown sequence for a singleplayer session.
+/// Defines the ordered startup sequence for a server session.
 ///
-/// When a singleplayer session transitions to `Stopping`, it progresses through
-/// these steps to ensure clean teardown of all session components.
-#[cfg(feature = "client")]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, SubStates, Reflect)]
-#[source(SingleplayerStatus = SingleplayerStatus::Stopping)]
-pub enum SingleplayerShutdownStep {
-    /// First, disconnect any remote clients if the session was open to LAN.
+/// When a server transitions to `Starting`, it progresses through
+/// these steps to ensure proper initialization of all server components.
+#[cfg(any(feature = "hosted", feature = "headless"))]
+#[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Reflect)]
+#[source(ServerStatus = ServerStatus::Starting)]
+pub enum ServerStartupStep {
+    /// Initial initialization phase.
     #[default]
-    DisconnectRemoteClients,
-    /// Close the local server instance.
-    CloseRemoteServer,
-    /// Despawn all AI-controlled bot entities.
-    DespawnBots,
-    /// Despawn the local player client entity.
-    DespawnLocalClient,
-    /// Finally, despawn the local server entity and complete cleanup.
-    DespawnLocalServer,
+    Init,
+    /// Loading world data and map generation.
+    LoadWorld,
+    /// Spawning all game entities.
+    SpawnEntities,
+    /// Server is fully ready to accept connections.
+    Ready,
 }
 
-// --- Server Specific Session States ---
+/// Defines the ordered shutdown sequence for a server session.
+///
+/// When a server transitions to `Stopping`, it progresses through
+/// these steps to ensure clean teardown of all session components.
+#[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Reflect)]
+#[source(ServerStatus = ServerStatus::Stopping)]
+pub enum ServerShutdownStep {
+    /// First, save the current world state to disk.
+    #[default]
+    SaveWorld,
+    /// Disconnect all connected remote clients gracefully.
+    DisconnectClients,
+    /// Despawn the local client entity (client-hosted sessions only).
+    #[cfg(feature = "hosted")]
+    DespawnLocalClient,
+    /// Final cleanup: despawn server entity and release resources.
+    Cleanup,
+}
+
+// --- Server Visibility ---
 
 /// Controls the visibility status of a multiplayer server.
 ///
 /// Manages the server's presence in public server listings, including
 /// transitions between private and public states. The server can be
 /// private (invisible), public (listed), or in transition between these states.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, States, Reflect)]
+#[derive(States, Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Reflect)]
 pub enum ServerVisibility {
     /// Server is not listed in public listings; only direct IP connections allowed.
     #[default]
     Private,
-    /// Request to make the server public has been submitted but not yet confirmed.
-    #[cfg(feature = "client")]
-    PendingPublic,
     /// Server is in the process of transitioning to public visibility.
     GoingPublic,
     /// Server is publicly listed and discoverable by other players.
     Public,
     /// Server is in the process of transitioning to private visibility.
     GoingPrivate,
-    /// The visibility transition failed; server remains in previous state.
-    Failed,
+}
+
+/// Defines the ordered sequence for making a server publicly visible.
+///
+/// When a server transitions to `GoingPublic`, it progresses through
+/// these steps to register with discovery services and become publicly listed.
+#[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Reflect)]
+#[source(ServerVisibility = ServerVisibility::GoingPublic)]
+pub enum GoingPublicStep {
+    /// Validate server configuration and prerequisites.
+    #[default]
+    Validating,
+    /// Start the public-facing server socket.
+    StartingServer,
+    /// Register with the discovery/matchmaking service.
+    StartingDiscovery,
+    /// Server is fully public and discoverable.
+    Ready,
+}
+
+/// Defines the ordered sequence for making a server private.
+///
+/// When a server transitions to `GoingPrivate`, it progresses through
+/// these steps to unregister from public listings and close public access.
+#[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Reflect)]
+#[source(ServerVisibility = ServerVisibility::GoingPrivate)]
+pub enum GoingPrivateStep {
+    /// Disconnect all clients connected via public discovery.
+    #[default]
+    DisconnectingClients,
+    /// Close the public-facing server socket.
+    ClosingServer,
+    /// Complete cleanup; server is now private.
+    CleanupComplete,
+}
+
+// --- Client Connection Status ---
+
+/// Defines the connection state of a client.
+///
+/// This state machine manages the entire client connection lifecycle,
+/// from initial connection attempt through gameplay to disconnection.
+/// Only active when `SessionType` is `Client`.
+#[cfg(feature = "hosted")]
+#[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Reflect)]
+#[source(SessionType = SessionType::Client)]
+pub enum ClientConnectionStatus {
+    /// Client is not connected to any server.
+    #[default]
+    Disconnected,
+    /// Client is attempting to establish a connection to the server.
+    Connecting,
+    /// Connection established, but not yet synced.
+    Connected,
+    /// Client is receiving world state from the server.
+    Syncing,
+    /// Client is fully synced and participating in gameplay.
+    Playing,
+    /// Client is in the process of disconnecting from the server.
+    Disconnecting,
+}
+
+/// Defines the ordered connection sequence for a client.
+///
+/// When a client transitions to `Connecting`, it progresses through
+/// these steps to establish a connection to the server.
+#[cfg(feature = "hosted")]
+#[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Reflect)]
+#[source(ClientConnectionStatus = ClientConnectionStatus::Connecting)]
+pub enum ConnectingStep {
+    /// Resolve the server address (DNS or IP).
+    #[default]
+    ResolveAddress,
+    /// Open a socket connection to the server.
+    OpenSocket,
+    /// Send the initial handshake packet.
+    SendHandshake,
+    /// Wait for server acceptance response.
+    WaitForAccept,
+    /// Connection fully established.
+    Ready,
+}
+
+/// Defines the ordered world synchronization sequence for a client.
+///
+/// When a client transitions to `Syncing`, it progresses through
+/// these steps to receive the current world state from the server.
+#[cfg(feature = "hosted")]
+#[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Reflect)]
+#[source(ClientConnectionStatus = ClientConnectionStatus::Syncing)]
+pub enum SyncingStep {
+    /// Request the current world state from the server.
+    #[default]
+    RequestWorld,
+    /// Receive and load chunk data from the server.
+    ReceiveChunks,
+    /// Spawn all entities received from the server.
+    SpawnEntities,
+    /// Synchronization complete; ready for gameplay.
+    Ready,
+}
+
+/// Defines the ordered disconnection sequence for a client.
+///
+/// When a client transitions to `Disconnecting`, it progresses through
+/// these steps to cleanly terminate the connection to the server.
+#[cfg(feature = "hosted")]
+#[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Reflect)]
+#[source(ClientConnectionStatus = ClientConnectionStatus::Disconnecting)]
+pub enum DisconnectingStep {
+    /// Send disconnect notification to the server.
+    #[default]
+    SendDisconnect,
+    /// Wait for server acknowledgment of disconnect.
+    WaitForAck,
+    /// Clean up local connection resources.
+    Cleanup,
+    /// Disconnection process complete.
+    Ready,
 }
 
 // --- Computed States ---
@@ -157,7 +273,6 @@ pub enum PhysicsSimulation {
     Paused,
 }
 
-// Physics runs when SessionState is Active.
 impl ComputedStates for PhysicsSimulation {
     type SourceStates = SessionState;
 

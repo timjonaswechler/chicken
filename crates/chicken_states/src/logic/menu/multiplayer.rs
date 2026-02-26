@@ -11,7 +11,7 @@ use {
                     MultiplayerSetup,
                 },
             },
-            session::{ClientStatus, ServerVisibility, SessionType, SingleplayerStatus},
+            session::{ClientConnectionStatus, ServerStatus, ServerVisibility, SessionType},
         },
     },
     bevy::prelude::{App, AppExtStates, NextState, On, Plugin, Res, ResMut, State},
@@ -56,7 +56,7 @@ fn handle_host_new_game_nav(
     mut next_screen: ResMut<NextState<HostNewGameMenuScreen>>,
     mut next_setup: ResMut<NextState<MultiplayerSetup>>,
     mut next_session_type: ResMut<NextState<SessionType>>,
-    mut next_singleplayer_state: ResMut<NextState<SingleplayerStatus>>,
+    mut next_server_status: ResMut<NextState<ServerStatus>>,
     mut next_server_state: ResMut<NextState<ServerVisibility>>,
     current_setup: Res<State<MultiplayerSetup>>,
 ) {
@@ -85,8 +85,8 @@ fn handle_host_new_game_nav(
         },
         SetNewHostGame::Confirm => {
             next_session_type.set(SessionType::Singleplayer);
-            next_singleplayer_state.set(SingleplayerStatus::Starting);
-            next_server_state.set(ServerVisibility::PendingPublic);
+            next_server_status.set(ServerStatus::Starting);
+            next_server_state.set(ServerVisibility::GoingPublic);
         }
         SetNewHostGame::Cancel => next_setup.set(MultiplayerSetup::Overview),
         SetNewHostGame::Back => next_setup.set(MultiplayerSetup::Overview),
@@ -99,7 +99,7 @@ fn handle_host_saved_game_nav(
     mut next_screen: ResMut<NextState<HostSavedGameMenuScreen>>,
     mut next_setup: ResMut<NextState<MultiplayerSetup>>,
     mut next_session_type: ResMut<NextState<SessionType>>,
-    mut next_singleplayer_state: ResMut<NextState<SingleplayerStatus>>,
+    mut next_server_status: ResMut<NextState<ServerStatus>>,
     mut next_server_state: ResMut<NextState<ServerVisibility>>,
     current_setup: Res<State<MultiplayerSetup>>,
 ) {
@@ -120,8 +120,8 @@ fn handle_host_saved_game_nav(
         }
         SetSavedHostGame::Confirm => {
             next_session_type.set(SessionType::Singleplayer);
-            next_singleplayer_state.set(SingleplayerStatus::Starting);
-            next_server_state.set(ServerVisibility::PendingPublic);
+            next_server_status.set(ServerStatus::Starting);
+            next_server_state.set(ServerVisibility::GoingPublic);
         }
         SetSavedHostGame::Cancel => next_setup.set(MultiplayerSetup::Overview),
         SetSavedHostGame::Back => next_setup.set(MultiplayerSetup::Overview),
@@ -133,7 +133,7 @@ fn handle_join_game_nav(
     current_setup: Res<State<MultiplayerSetup>>,
     mut next_setup: ResMut<NextState<MultiplayerSetup>>,
     mut next_session_type: ResMut<NextState<SessionType>>,
-    mut next_client_state: ResMut<NextState<ClientStatus>>,
+    mut next_client_state: ResMut<NextState<ClientConnectionStatus>>,
 ) {
     if *current_setup.get() != MultiplayerSetup::JoinGame {
         return;
@@ -143,7 +143,7 @@ fn handle_join_game_nav(
         SetJoinGame::Back => next_setup.set(MultiplayerSetup::Overview),
         SetJoinGame::Confirm => {
             next_session_type.set(SessionType::Client);
-            next_client_state.set(ClientStatus::Connecting);
+            next_client_state.set(ClientConnectionStatus::Connecting);
         }
         SetJoinGame::Cancel => next_setup.set(MultiplayerSetup::Overview),
         _ => {}

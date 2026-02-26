@@ -5,11 +5,11 @@ use bevy::prelude::{Reflect, States};
 pub enum AppScope {
     /// Initial splash screen / Intro (Client only).
     /// Loads essential assets and shows logo.
-    #[cfg(feature = "client")]
+    #[cfg(feature = "hosted")]
     Splash,
 
     /// The main menu (Client only).
-    #[cfg(feature = "client")]
+    #[cfg(feature = "hosted")]
     Menu,
 
     /// The actual game session (Client & Server).
@@ -20,15 +20,11 @@ pub enum AppScope {
 impl Default for AppScope {
     fn default() -> Self {
         // Client starts at Splash screen
-        #[cfg(feature = "client")]
+        #[cfg(feature = "hosted")]
         return AppScope::Splash;
 
         // Dedicated Server starts directly in Session
-        #[cfg(all(feature = "server", not(feature = "client")))]
+        #[cfg(feature = "headless")]
         return AppScope::Session;
-
-        // Fallback safety
-        #[cfg(all(not(feature = "client"), not(feature = "server")))]
-        panic!("No valid features enabled");
     }
 }

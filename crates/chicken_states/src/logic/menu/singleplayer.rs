@@ -8,17 +8,17 @@ use {
                 main::MainMenuContext,
                 singleplayer::{NewGameMenuScreen, SavedGameMenuScreen, SingleplayerSetup},
             },
-            session::{ServerVisibility, SessionType, SingleplayerStatus},
+            session::{ServerStatus, ServerVisibility, SessionType},
         },
     },
-    bevy::prelude::{App, AppExtStates, NextState, On, Plugin, Res, ResMut, State, info},
+    bevy::prelude::{info, App, AppExtStates, NextState, On, Plugin, Res, ResMut, State},
 };
 
 pub(super) struct SingleplayerMenuPlugin;
 
 impl Plugin for SingleplayerMenuPlugin {
     fn build(&self, app: &mut App) {
-        app.add_sub_state::<SingleplayerSetup>() // Adding it here as a sub-state
+        app.add_sub_state::<SingleplayerSetup>()
             .add_sub_state::<NewGameMenuScreen>()
             .add_sub_state::<SavedGameMenuScreen>()
             .add_observer(handle_overview_nav)
@@ -52,7 +52,7 @@ fn handle_new_game_nav(
     mut next_screen: ResMut<NextState<NewGameMenuScreen>>,
     mut next_setup: ResMut<NextState<SingleplayerSetup>>,
     mut next_session_type: ResMut<NextState<SessionType>>,
-    mut next_singleplayer_state: ResMut<NextState<SingleplayerStatus>>,
+    mut next_server_status: ResMut<NextState<ServerStatus>>,
     mut next_server_state: ResMut<NextState<ServerVisibility>>,
     current_setup: Res<State<SingleplayerSetup>>,
 ) {
@@ -89,7 +89,7 @@ fn handle_new_game_nav(
         }
         SetSingleplayerNewGame::Confirm => {
             next_session_type.set(SessionType::Singleplayer);
-            next_singleplayer_state.set(SingleplayerStatus::Starting);
+            next_server_status.set(ServerStatus::Starting);
             next_server_state.set(ServerVisibility::Private);
         }
         SetSingleplayerNewGame::Cancel => next_setup.set(SingleplayerSetup::Overview),
@@ -106,7 +106,7 @@ fn handle_load_game_nav(
     current_setup: Res<State<SingleplayerSetup>>,
     mut next_setup: ResMut<NextState<SingleplayerSetup>>,
     mut next_session_type: ResMut<NextState<SessionType>>,
-    mut next_singleplayer_state: ResMut<NextState<SingleplayerStatus>>,
+    mut next_server_status: ResMut<NextState<ServerStatus>>,
     mut next_server_state: ResMut<NextState<ServerVisibility>>,
 ) {
     if *current_setup.get() != SingleplayerSetup::LoadGame {
@@ -123,7 +123,7 @@ fn handle_load_game_nav(
         }
         SetSingleplayerSavedGame::Confirm => {
             next_session_type.set(SessionType::Singleplayer);
-            next_singleplayer_state.set(SingleplayerStatus::Starting);
+            next_server_status.set(ServerStatus::Starting);
             next_server_state.set(ServerVisibility::Private);
         }
         SetSingleplayerSavedGame::Cancel => next_setup.set(SingleplayerSetup::Overview),

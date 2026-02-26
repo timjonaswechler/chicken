@@ -9,23 +9,31 @@
 //!  Events should be have a uniform interface.
 //! <\div>
 
-#[cfg(all(not(feature = "client"), not(feature = "server")))]
-compile_error!(
-    "You must enable either the 'client' or 'server' feature (or both) to build this crate."
-);
+#[cfg(all(not(feature = "hosted"), not(feature = "headless")))]
+compile_error!("You must enable either the 'hosted' or 'headless' feature to build this crate.");
+
+#[cfg(all(feature = "hosted", feature = "headless"))]
+compile_error!("You cannot enable both the 'hosted' and 'headless' features.");
+
 pub(crate) mod events;
 pub(crate) mod logic;
 pub(crate) mod states;
 
 pub use {
-    events::session::SetServerVisibility,
+    events::session::{
+        SetGoingPrivateStep, SetGoingPublicStep, SetServerShutdownStep, SetServerStartupStep,
+        SetServerStatus, SetServerVisibility,
+    },
     states::{
         app::AppScope,
-        session::{PhysicsSimulation, ServerVisibility, SessionState},
+        session::{
+            GoingPrivateStep, GoingPublicStep, PhysicsSimulation, ServerShutdownStep,
+            ServerStartupStep, ServerStatus, ServerVisibility, SessionState, SessionType,
+        },
     },
 };
 
-#[cfg(feature = "client")]
+#[cfg(feature = "hosted")]
 pub use {
     events::{
         app::ChangeAppScope,
@@ -38,8 +46,7 @@ pub use {
             wiki::WikiMenuEvent,
         },
         session::{
-            SetClientShutdownStep, SetClientStatus, SetSingleplayerShutdownStep,
-            SetSingleplayerStatus,
+            SetClientConnectionStatus, SetConnectingStep, SetDisconnectingStep, SetSyncingStep,
         },
     },
     states::{
@@ -54,10 +61,7 @@ pub use {
             singleplayer::{NewGameMenuScreen, SavedGameMenuScreen, SingleplayerSetup},
             wiki::WikiMenuScreen,
         },
-        session::{
-            ClientShutdownStep, ClientStatus, SessionType, SingleplayerShutdownStep,
-            SingleplayerStatus,
-        },
+        session::{ClientConnectionStatus, ConnectingStep, DisconnectingStep, SyncingStep},
     },
 };
 
@@ -72,15 +76,14 @@ impl Plugin for ChickenStatePlugin {
         app.add_plugins(logic::app::AppLogicPlugin);
 
         // Session Logic
-        #[cfg(feature = "client")]
-        app.add_plugins(logic::session::client::ClientSessionPlugin);
+        #[cfg(feature = "hosted")]
+        app.add_plugins((
+            logic::session::client::ClientSessionPlugin,
+            logic::menu::MenuPlugin,
+        ));
 
         // Server Logic (Dedicated Server OR Singleplayer Host)
-        #[cfg(any(feature = "server", feature = "client"))]
+        #[cfg(any(feature = "hosted", feature = "headless"))]
         app.add_plugins(logic::session::server::ServerSessionPlugin);
-
-        // Menu Logic
-        #[cfg(feature = "client")]
-        app.add_plugins(logic::menu::MenuPlugin);
     }
 }

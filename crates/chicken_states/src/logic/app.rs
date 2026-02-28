@@ -1,5 +1,5 @@
 use {
-    crate::states::{app::AppScope, session::SessionState},
+    crate::states::app::AppScope,
     bevy::prelude::{App, AppExtStates, Plugin},
 };
 
@@ -10,8 +10,8 @@ use {
         states::{menu::main::MainMenuContext, session::SessionType},
     },
     bevy::prelude::{
-        ButtonInput, IntoScheduleConfigs, KeyCode, NextState, On, OnEnter, Res, ResMut, Resource,
-        Time, Update, in_state,
+        in_state, ButtonInput, IntoScheduleConfigs, KeyCode, NextState, On, OnEnter, Res, ResMut,
+        Resource, Time, Update,
     },
 };
 
@@ -19,7 +19,8 @@ pub struct AppLogicPlugin;
 
 impl Plugin for AppLogicPlugin {
     fn build(&self, app: &mut App) {
-        app.init_state::<AppScope>().add_sub_state::<SessionState>();
+        app.init_state::<AppScope>();
+
         #[cfg(feature = "hosted")]
         {
             // Initialize the splash timer resource
@@ -68,7 +69,7 @@ fn handle_splash_screen(
 }
 
 #[cfg(feature = "hosted")]
-fn on_change_app_scope(
+pub(crate) fn on_change_app_scope(
     event: On<ChangeAppScope>,
     mut state: ResMut<NextState<AppScope>>,
     mut session_type: ResMut<NextState<SessionType>>,

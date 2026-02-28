@@ -3,8 +3,7 @@ use {
         events::{
             menu::PauseMenuEvent,
             session::{
-                SetClientConnectionStatus, SetConnectingStep, SetDisconnectingStep,
-                SetServerShutdownStep, SetServerStatus, SetSyncingStep,
+                SetClientConnectionStatus, SetConnectingStep, SetDisconnectingStep, SetSyncingStep,
             },
         },
         states::{
@@ -26,9 +25,7 @@ pub struct ClientSessionPlugin;
 
 impl Plugin for ClientSessionPlugin {
     fn build(&self, app: &mut App) {
-        app.init_state::<SessionType>()
-
-            .add_sub_state::<ClientConnectionStatus>()
+        app.add_sub_state::<ClientConnectionStatus>()
             .add_sub_state::<ConnectingStep>()
             .add_sub_state::<SyncingStep>()
             .add_sub_state::<DisconnectingStep>()
@@ -38,8 +35,7 @@ impl Plugin for ClientSessionPlugin {
             .add_observer(on_connecting_step)
             .add_observer(on_syncing_step)
             .add_observer(on_set_disconnecting_step)
-            .add_observer(on_set_server_status)
-            .add_observer(on_set_server_shutdown_step)
+
             .add_observer(handle_pause_menu_nav) // TODO: evtl. falscher platz.
             .add_systems(
                 Update,
@@ -145,6 +141,7 @@ fn on_client_connection_status_event(
             current.get(),
             event.transition
         );
+        return;
     }
 
     match event.transition {
@@ -217,6 +214,9 @@ fn on_syncing_step(
         SetSyncingStep::Done => {
             next_client_status.set(ClientConnectionStatus::Playing);
         }
+        SetSyncingStep::Failed => {
+            todo!("Failed to sync");
+        }
     }
 }
 
@@ -251,83 +251,8 @@ fn on_set_disconnecting_step(
             next_main_menu.set(MainMenuContext::Main);
             next_session_type.set(SessionType::None);
         }
-    }
-}
-
-fn is_valid_server_status_transition(from: &ServerStatus, to: &ServerStatus) -> bool {
-    matches!(
-        (from, to),
-        (ServerStatus::Offline, ServerStatus::Starting)
-            | (ServerStatus::Starting, ServerStatus::Running)
-            | (ServerStatus::Starting, ServerStatus::Offline)
-            | (ServerStatus::Running, ServerStatus::Stopping)
-            | (ServerStatus::Stopping, ServerStatus::Offline)
-    )
-}
-
-fn on_set_server_status(
-    event: On<SetServerStatus>,
-    mut next_app_scope: ResMut<NextState<AppScope>>,
-    mut next_session_state: ResMut<NextState<SessionState>>,
-    mut next_state: ResMut<NextState<ServerStatus>>,
-    current: Res<State<ServerStatus>>,
-) {
-    if !is_valid_server_status_transition(current.get(), &event.transition) {
-        warn!(
-            "Unexpected ServerStatus transition: {:?} -> {:?}",
-            current.get(),
-            event.transition
-        );
-    }
-
-    match event.transition {
-        ServerStatus::Running => {
-            next_state.set(ServerStatus::Running);
-            next_app_scope.set(AppScope::Session);
-            next_session_state.set(SessionState::Active);
-        }
-        ServerStatus::Stopping => {
-            next_state.set(ServerStatus::Stopping);
-        }
-        ServerStatus::Starting => {
-            next_state.set(ServerStatus::Starting);
-        }
-        ServerStatus::Offline => {
-            next_state.set(ServerStatus::Offline);
-        }
-    }
-}
-
-fn on_set_server_shutdown_step(
-    event: On<SetServerShutdownStep>,
-    shutdown_state: Res<State<ServerShutdownStep>>,
-    mut next_main_menu: ResMut<NextState<MainMenuContext>>,
-    mut next_app_scope: ResMut<NextState<AppScope>>,
-    mut next_state: ResMut<NextState<ServerShutdownStep>>,
-    mut next_session_type: ResMut<NextState<SessionType>>,
-    mut next_server_status: ResMut<NextState<ServerStatus>>,
-) {
-    match *event {
-        SetServerShutdownStep::Start => {
-            next_state.set(ServerShutdownStep::SaveWorld);
-        }
-        SetServerShutdownStep::Next => match **shutdown_state {
-            ServerShutdownStep::SaveWorld => {
-                next_state.set(ServerShutdownStep::DisconnectClients);
-            }
-            ServerShutdownStep::DisconnectClients => {
-                next_state.set(ServerShutdownStep::DespawnLocalClient);
-            }
-            ServerShutdownStep::DespawnLocalClient => {
-                next_state.set(ServerShutdownStep::Cleanup);
-            }
-            ServerShutdownStep::Cleanup => {}
-        },
-        SetServerShutdownStep::Done => {
-            next_server_status.set(ServerStatus::Offline);
-            next_app_scope.set(AppScope::Menu);
-            next_main_menu.set(MainMenuContext::Main);
-            next_session_type.set(SessionType::None);
+        SetDisconnectingStep::Failed => {
+            todo!("Failed to disconnect");
         }
     }
 }

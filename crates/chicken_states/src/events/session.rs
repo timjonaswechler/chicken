@@ -1,17 +1,7 @@
-use {
-    crate::states::session::{ServerStatus, ServerVisibility},
-    bevy::prelude::Event,
-};
+use bevy::prelude::Event;
 
 #[cfg(feature = "hosted")]
 use crate::states::session::ClientConnectionStatus;
-
-/// Event to transition the server status.
-#[derive(Event, Debug, Clone, Copy)]
-pub struct SetServerStatus {
-    /// The target server status.
-    pub transition: ServerStatus,
-}
 
 /// Events for controlling the server startup sequence.
 #[derive(Event, Debug, Clone, Copy)]
@@ -35,13 +25,8 @@ pub enum SetServerShutdownStep {
     Next,
     /// Shutdown process complete.
     Done,
-}
-
-/// Event to transition the server visibility state.
-#[derive(Event, Debug, Clone, Copy)]
-pub struct SetServerVisibility {
-    /// The target server visibility state.
-    pub transition: ServerVisibility,
+    /// Shutdown process failed.
+    Failed,
 }
 
 /// Events for controlling the going-public sequence.
@@ -66,6 +51,8 @@ pub enum SetGoingPrivateStep {
     Next,
     /// Process complete.
     Done,
+    /// Process failed.
+    Failed,
 }
 
 /// Event to transition the client connection status.
@@ -100,6 +87,8 @@ pub enum SetSyncingStep {
     Next,
     /// Syncing process complete.
     Done,
+    /// Syncing process failed.
+    Failed,
 }
 
 /// Events for controlling the disconnecting sequence.
@@ -112,4 +101,6 @@ pub enum SetDisconnectingStep {
     Next,
     /// Disconnect process complete.
     Done,
+    /// Disconnect process failed.
+    Failed,
 }

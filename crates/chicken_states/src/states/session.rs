@@ -3,26 +3,6 @@ use {
     bevy::prelude::{ComputedStates, Reflect, StateSet, States, SubStates},
 };
 
-/// The [SessionState] holds the current state of the In-Game Loop.
-#[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Reflect)]
-#[source(AppScope = AppScope::Session)]
-pub enum SessionState {
-    /// Initial setup phase.
-    /// - Server: World Generation, Map Loading.
-    /// - Client: Connecting, Syncing, Loading Screen.
-    #[default]
-    Setup,
-
-    /// The active game loop.
-    /// Physics and Gameplay are running.
-    Active,
-
-    /// In-Game Pause Menu (Client only).
-    /// Physics might be paused here.
-    #[cfg(feature = "hosted")]
-    Paused,
-}
-
 /// Defines the type of session.
 #[derive(States, Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Reflect)]
 pub enum SessionType {
@@ -41,6 +21,26 @@ pub enum SessionType {
     /// DedicatedServer is active when running as a dedicated server without a local client.
     #[cfg(feature = "headless")]
     DedicatedServer,
+}
+
+/// The [SessionState] holds the current state of the In-Game Loop.
+#[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Reflect)]
+#[source(AppScope = AppScope::Session)]
+pub enum SessionState {
+    /// Initial setup phase.
+    /// - Server: World Generation, Map Loading.
+    /// - Client: Connecting, Syncing, Loading Screen.
+    #[default]
+    Setup,
+
+    /// The active game loop.
+    /// Physics and Gameplay are running.
+    Active,
+
+    /// In-Game Pause Menu (Client only).
+    /// Physics might be paused here.
+    #[cfg(feature = "hosted")]
+    Paused,
 }
 
 // --- Server Status (Singleplayer & DedicatedServer) ---
@@ -64,6 +64,12 @@ pub enum ServerStatus {
     /// Server is shutting down: saving state, disconnecting clients, releasing resources.
     Stopping,
 }
+
+/// Tracks the lifecycle state of a server session.
+///
+/// This state machine manages the startup, active gameplay, and shutdown phases
+/// of both singleplayer (local) and dedicated server sessions.
+/// Active when `SessionType` is `Singleplayer` or `DedicatedServer`.
 #[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Reflect)]
 #[cfg(feature = "headless")]
 #[source(SessionType = SessionType::DedicatedServer)]
@@ -115,6 +121,8 @@ pub enum ServerShutdownStep {
     DespawnLocalClient,
     /// Final cleanup: despawn server entity and release resources.
     Cleanup,
+    /// Signal that the server has stopped gracefully.
+    Ready,
 }
 
 // --- Server Visibility ---
@@ -124,7 +132,8 @@ pub enum ServerShutdownStep {
 /// Manages the server's presence in public server listings, including
 /// transitions between private and public states. The server can be
 /// private (invisible), public (listed), or in transition between these states.
-#[derive(States, Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Reflect)]
+#[derive(SubStates, Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Reflect)]
+#[source(ServerStatus = ServerStatus::Running)]
 pub enum ServerVisibility {
     /// Server is not listed in public listings; only direct IP connections allowed.
     #[default]
@@ -168,7 +177,9 @@ pub enum GoingPrivateStep {
     /// Close the public-facing server socket.
     ClosingServer,
     /// Complete cleanup; server is now private.
-    CleanupComplete,
+    Cleanup,
+    /// Server is fully private.
+    Ready,
 }
 
 // --- Client Connection Status ---

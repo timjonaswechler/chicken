@@ -45,7 +45,6 @@ fn handle_overview_nav(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn handle_new_game_nav(
     trigger: On<SetSingleplayerNewGame>,
     current_screen: Option<Res<State<NewGameMenuScreen>>>,

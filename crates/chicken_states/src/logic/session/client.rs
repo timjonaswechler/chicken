@@ -443,8 +443,63 @@ fn on_set_disconnecting_step(
                 }
                 _ => {}
             }
-            DisconnectingStep::Cleanup => {
-                next_state.set(DisconnectingStep::Ready);
+        }
+    }
+}
+
+// =============================================================================
+// TESTS
+// =============================================================================
+#[cfg(feature = "hosted")]
+#[cfg(test)]
+mod tests {
+    //! Tests für die Client-Session Logik.
+    //!
+    //! Diese Tests prüfen:
+    //! 1. Validator-Funktionen (ob Übergänge gültig/ungültig sind)
+    //! 2. Observer-Logik (ob Events korrekt verarbeitet werden)
+    //! 3. SubState-Übergänge (ob die Schritte korrekt durchlaufen werden)
+
+    use crate::events::session::{SetConnectingStep, SetDisconnectingStep, SetSyncingStep};
+    use crate::states::session::ClientConnectionStatus;
+
+    mod helpers {
+
+        use crate::{
+            AppScope, ClientConnectionStatus, ConnectingStep, DisconnectingStep, SessionState,
+            SessionType, SetConnectingStep, SetDisconnectingStep, SetSyncingStep, SyncingStep,
+            logic::{
+                app::on_change_app_scope, menu::MenuPlugin, session::client::ClientSessionPlugin,
+            },
+        };
+
+        use bevy::{input::InputPlugin, prelude::*, state::app::StatesPlugin};
+
+        pub const CONNECTING_STEPS: u8 = 4;
+        pub const SYNCING_STEPS: u8 = 3;
+        pub const DISCONNECTING_STEPS: u8 = 3;
+
+        pub fn test_app() -> App {
+            let mut app = App::new();
+            app.add_plugins((
+                MinimalPlugins,
+                StatesPlugin,
+                InputPlugin,
+                ClientSessionPlugin,
+                MenuPlugin,
+            ))
+            .init_state::<AppScope>()
+            .init_state::<SessionType>()
+            .add_sub_state::<SessionState>();
+            #[cfg(feature = "hosted")]
+            app.add_observer(on_change_app_scope);
+            app
+        }
+
+        /// Runs the app for one update tick.
+        pub fn update_app(app: &mut App, i: u8) {
+            for _ in 0..i {
+                app.update();
             }
         }
 
@@ -458,19 +513,507 @@ fn on_set_disconnecting_step(
                 let app_scope = app.world().resource::<State<AppScope>>();
                 assert_eq!(app_scope.get(), &AppScope::Splash);
             }
-            DisconnectingStep::Cleanup => {
-                next_state.set(DisconnectingStep::Ready);
+
+            #[cfg(feature = "hosted")]
+            {
+                let mut next_app_scope = app.world_mut().resource_mut::<NextState<AppScope>>();
+                next_app_scope.set(AppScope::Menu);
+                app.update();
             }
-            DisconnectingStep::Ready => {}
-        },
-        SetDisconnectingStep::Done => {
-            next_client_status.set(ClientConnectionStatus::Disconnected);
-            next_app_scope.set(AppScope::Menu);
-            next_main_menu.set(MainMenuContext::Main);
-            next_session_type.set(SessionType::None);
+
+            #[cfg(feature = "hosted")]
+            {
+                let app_scope = app.world().resource::<State<AppScope>>();
+                assert_eq!(app_scope.get(), &AppScope::Menu);
+                let session_type = app.world().resource::<State<SessionType>>();
+                assert_eq!(session_type.get(), &SessionType::None);
+            }
+
+            {
+                let mut next_session_type =
+                    app.world_mut().resource_mut::<NextState<SessionType>>();
+                next_session_type.set(SessionType::Client);
+                app.update();
+            }
+
+            {
+                let session_type_state = app.world().resource::<State<SessionType>>();
+                assert_eq!(session_type_state.get(), &SessionType::Client);
+
+                let client_status = app.world().resource::<State<ClientConnectionStatus>>();
+                assert_eq!(client_status.get(), &ClientConnectionStatus::Disconnected);
+            }
+
+            app
         }
-        SetDisconnectingStep::Failed => {
-            todo!("Failed to disconnect");
+
+        /// Startet den Verbindungsprozess
+        pub fn start_connecting(app: &mut App) {
+            app.world_mut().trigger(SetConnectingStep::Start);
+            update_app(app, 1);
+
+            let client_status = app.world().resource::<State<ClientConnectionStatus>>();
+            assert_eq!(client_status.get(), &ClientConnectionStatus::Connecting);
+
+            let session_type = app.world().resource::<State<SessionType>>();
+            assert_eq!(session_type.get(), &SessionType::Client);
+
+            let connecting_step = app.world().resource::<State<ConnectingStep>>();
+            assert_eq!(connecting_step.get(), &ConnectingStep::ResolveAddress);
+        }
+
+        /// Führt den Verbindungsprozess fort
+        pub fn connecting_next_step(app: &mut App, i: u8) {
+            for _ in 0..i {
+                app.world_mut().trigger(SetConnectingStep::Next);
+                update_app(app, 1);
+            }
+
+            {
+                let step = app.world().resource::<State<ConnectingStep>>();
+                assert_eq!(step.get(), &ConnectingStep::Ready);
+
+                let state = app.world().resource::<State<ClientConnectionStatus>>();
+                assert_eq!(state.get(), &ClientConnectionStatus::Connecting);
+            }
+
+            app.world_mut().trigger(SetConnectingStep::Done);
+            update_app(app, 1);
+
+            {
+                let state_after_done = app.world().resource::<State<ClientConnectionStatus>>();
+                assert_eq!(state_after_done.get(), &ClientConnectionStatus::Connected);
+            }
+        }
+
+        /// Startet den Sync-Prozess
+        pub fn start_syncing(app: &mut App) {
+            app.world_mut().trigger(SetSyncingStep::Start);
+            update_app(app, 1);
+
+            let client_status = app.world().resource::<State<ClientConnectionStatus>>();
+            assert_eq!(client_status.get(), &ClientConnectionStatus::Syncing);
+
+            #[cfg(feature = "hosted")]
+            {
+                let app_scope = app.world().resource::<State<AppScope>>();
+                assert_eq!(app_scope.get(), &AppScope::Session);
+            }
+
+            let syncing_step = app.world().resource::<State<SyncingStep>>();
+            assert_eq!(syncing_step.get(), &SyncingStep::RequestWorld);
+        }
+
+        /// Führt den Sync-Prozess fort
+        pub fn syncing_next_step(app: &mut App, i: u8) {
+            for _ in 0..i {
+                app.world_mut().trigger(SetSyncingStep::Next);
+                update_app(app, 1);
+            }
+
+            {
+                let step = app.world().resource::<State<SyncingStep>>();
+                assert_eq!(step.get(), &SyncingStep::Ready);
+                let state = app.world().resource::<State<ClientConnectionStatus>>();
+                assert_eq!(state.get(), &ClientConnectionStatus::Syncing);
+            }
+
+            app.world_mut().trigger(SetSyncingStep::Done);
+            update_app(app, 1);
+
+            {
+                let state_after_done = app.world().resource::<State<ClientConnectionStatus>>();
+                assert_eq!(state_after_done.get(), &ClientConnectionStatus::Playing);
+
+                let session_state = app.world().resource::<State<SessionState>>();
+                assert_eq!(session_state.get(), &SessionState::Active);
+            }
+        }
+
+        /// Startet den Disconnect-Prozess
+        pub fn start_disconnecting(app: &mut App) {
+            app.world_mut().trigger(SetDisconnectingStep::Start);
+            update_app(app, 1);
+
+            let client_status = app.world().resource::<State<ClientConnectionStatus>>();
+            assert_eq!(client_status.get(), &ClientConnectionStatus::Disconnecting);
+
+            let disconnecting_step = app.world().resource::<State<DisconnectingStep>>();
+            assert_eq!(disconnecting_step.get(), &DisconnectingStep::SendDisconnect);
+        }
+
+        /// Führt den Disconnect-Prozess fort
+        pub fn disconnecting_next_step(app: &mut App, i: u8) {
+            for _ in 0..i {
+                app.world_mut().trigger(SetDisconnectingStep::Next);
+                update_app(app, 1);
+            }
+
+            {
+                let step = app.world().resource::<State<DisconnectingStep>>();
+                assert_eq!(step.get(), &DisconnectingStep::Ready);
+                let state = app.world().resource::<State<ClientConnectionStatus>>();
+                assert_eq!(state.get(), &ClientConnectionStatus::Disconnecting);
+            }
+
+            app.world_mut().trigger(SetDisconnectingStep::Done);
+            update_app(app, 1);
+
+            {
+                let session_type = app.world().resource::<State<SessionType>>();
+                assert_eq!(session_type.get(), &SessionType::None);
+
+                let app_scope = app.world().resource::<State<AppScope>>();
+                assert_eq!(app_scope.get(), &AppScope::Menu);
+            }
+        }
+
+        /// Verbindungsprozess an einem bestimmten Step fehlschlagen lassen
+        pub fn connecting_fail_at_step(app: &mut App, fail_at_step: u8) {
+            println!("Connecting Failure Step: {:?}", fail_at_step);
+
+            for _ in 0..fail_at_step {
+                app.world_mut().trigger(SetConnectingStep::Next);
+                update_app(app, 1);
+            }
+
+            app.world_mut().trigger(SetConnectingStep::Failed);
+            update_app(app, 1);
+
+            let session_type = app.world().resource::<State<SessionType>>();
+            assert_eq!(session_type.get(), &SessionType::None);
+
+            let app_scope = app.world().resource::<State<AppScope>>();
+            assert_eq!(app_scope.get(), &AppScope::Menu);
+        }
+
+        /// Sync-Prozess an einem bestimmten Step fehlschlagen lassen
+        pub fn syncing_fail_at_step(app: &mut App, fail_at_step: u8) {
+            println!("Syncing Failure Step: {:?}", fail_at_step);
+
+            for _ in 0..fail_at_step {
+                app.world_mut().trigger(SetSyncingStep::Next);
+                update_app(app, 1);
+            }
+
+            app.world_mut().trigger(SetSyncingStep::Failed);
+            update_app(app, 1);
+
+            let client_status = app.world().resource::<State<ClientConnectionStatus>>();
+            assert_eq!(client_status.get(), &ClientConnectionStatus::Disconnected);
+        }
+
+        /// Disconnect-Prozess an einem bestimmten Step fehlschlagen lassen
+        pub fn disconnecting_fail_at_step(app: &mut App, fail_at_step: u8) {
+            println!("Disconnecting Failure Step: {:?}", fail_at_step);
+
+            for _ in 0..fail_at_step {
+                app.world_mut().trigger(SetDisconnectingStep::Next);
+                update_app(app, 1);
+            }
+
+            app.world_mut().trigger(SetDisconnectingStep::Failed);
+            update_app(app, 1);
+
+            let session_type = app.world().resource::<State<SessionType>>();
+            assert_eq!(session_type.get(), &SessionType::None);
+
+            let app_scope = app.world().resource::<State<AppScope>>();
+            assert_eq!(app_scope.get(), &AppScope::Menu);
+        }
+    }
+
+    // =============================================================================
+    // TESTS FÜR CONNECTING STEP
+    // =============================================================================
+
+    mod connecting_step_tests {
+
+        use super::*;
+
+        /// Test: ConnectingStep::Start wechselt zu ResolveAddress.
+        #[test]
+        fn test_connecting_start() {
+            let mut app = helpers::setup_test_app_for_client();
+            helpers::start_connecting(&mut app);
+        }
+
+        /// Test: Verbindung erfolgreich herstellen
+        #[test]
+        fn test_connecting_success() {
+            let mut app = helpers::setup_test_app_for_client();
+            helpers::start_connecting(&mut app);
+            helpers::connecting_next_step(&mut app, helpers::CONNECTING_STEPS);
+        }
+
+        /// Test: Verbindung kann an verschiedenen Steps fehlschlagen.
+        #[test]
+        fn test_connecting_failure() {
+            for step in 0..helpers::CONNECTING_STEPS {
+                let mut app = helpers::setup_test_app_for_client();
+                helpers::start_connecting(&mut app);
+                helpers::connecting_fail_at_step(&mut app, step);
+            }
+        }
+    }
+
+    // =============================================================================
+    // TESTS FÜR SYNCING STEP
+    // =============================================================================
+
+    mod syncing_step_tests {
+
+        use super::*;
+
+        /// Test: SyncingStep::Start wechselt zu RequestWorld.
+        #[test]
+        fn test_syncing_start() {
+            let mut app = helpers::setup_test_app_for_client();
+            helpers::start_connecting(&mut app);
+            helpers::connecting_next_step(&mut app, helpers::CONNECTING_STEPS);
+            helpers::start_syncing(&mut app);
+        }
+
+        /// Test: Sync erfolgreich abgeschlossen
+        #[test]
+        fn test_syncing_success() {
+            let mut app = helpers::setup_test_app_for_client();
+            helpers::start_connecting(&mut app);
+            helpers::connecting_next_step(&mut app, helpers::CONNECTING_STEPS);
+            helpers::start_syncing(&mut app);
+            helpers::syncing_next_step(&mut app, helpers::SYNCING_STEPS);
+        }
+
+        /// Test: Sync kann an verschiedenen Steps fehlschlagen.
+        #[test]
+        fn test_syncing_failure() {
+            for step in 0..helpers::SYNCING_STEPS {
+                let mut app = helpers::setup_test_app_for_client();
+                helpers::start_connecting(&mut app);
+                helpers::connecting_next_step(&mut app, helpers::CONNECTING_STEPS);
+                helpers::start_syncing(&mut app);
+                helpers::syncing_fail_at_step(&mut app, step);
+            }
+        }
+    }
+
+    // =============================================================================
+    // TESTS FÜR DISCONNECTING STEP
+    // =============================================================================
+
+    mod disconnecting_step_tests {
+
+        use super::*;
+
+        /// Test: DisconnectingStep::Start wechselt zu SendDisconnect.
+        #[test]
+        fn test_disconnecting_start() {
+            let mut app = helpers::setup_test_app_for_client();
+            helpers::start_connecting(&mut app);
+            helpers::connecting_next_step(&mut app, helpers::CONNECTING_STEPS);
+            helpers::start_syncing(&mut app);
+            helpers::syncing_next_step(&mut app, helpers::SYNCING_STEPS);
+            helpers::start_disconnecting(&mut app);
+        }
+
+        /// Test: Disconnect erfolgreich abgeschlossen
+        #[test]
+        fn test_disconnecting_success() {
+            let mut app = helpers::setup_test_app_for_client();
+            helpers::start_connecting(&mut app);
+            helpers::connecting_next_step(&mut app, helpers::CONNECTING_STEPS);
+            helpers::start_syncing(&mut app);
+            helpers::syncing_next_step(&mut app, helpers::SYNCING_STEPS);
+            helpers::start_disconnecting(&mut app);
+            helpers::disconnecting_next_step(&mut app, helpers::DISCONNECTING_STEPS);
+        }
+
+        /// Test: Disconnect kann an verschiedenen Steps fehlschlagen.
+        #[test]
+        fn test_disconnecting_failure() {
+            for step in 0..helpers::DISCONNECTING_STEPS {
+                let mut app = helpers::setup_test_app_for_client();
+                helpers::start_connecting(&mut app);
+                helpers::connecting_next_step(&mut app, helpers::CONNECTING_STEPS);
+                helpers::start_syncing(&mut app);
+                helpers::syncing_next_step(&mut app, helpers::SYNCING_STEPS);
+                helpers::start_disconnecting(&mut app);
+                helpers::disconnecting_fail_at_step(&mut app, step);
+            }
+        }
+    }
+
+    // =============================================================================
+    // INTEGRATIONSTEST: KOMPLETTER CLIENT LEBENSZYKLUS
+    // =============================================================================
+
+    mod integration_tests {
+
+        use super::*;
+
+        /// Test: Kompletter Client-Lebenszyklus.
+        /// Disconnected -> Connecting -> Connected -> Syncing -> Playing -> Disconnecting -> Disconnected
+        #[test]
+        fn test_full_client_lifecycle() {
+            let mut app = helpers::setup_test_app_for_client();
+
+            // Connecting
+            helpers::start_connecting(&mut app);
+            helpers::connecting_next_step(&mut app, helpers::CONNECTING_STEPS);
+
+            // Syncing
+            helpers::start_syncing(&mut app);
+            helpers::syncing_next_step(&mut app, helpers::SYNCING_STEPS);
+
+            // Disconnecting
+            helpers::start_disconnecting(&mut app);
+            helpers::disconnecting_next_step(&mut app, helpers::DISCONNECTING_STEPS);
+        }
+    }
+
+    // =============================================================================
+    // TESTS FÜR VALIDATOR-FUNKTIONEN
+    // =============================================================================
+
+    mod validator_tests {
+
+        use super::*;
+        use crate::{ConnectingStep, DisconnectingStep, SyncingStep};
+
+        // Importiere alle Validator-Funktionen
+        use super::super::is_valid_client_status_connecting_transition;
+        use super::super::is_valid_client_status_disconnecting_transition;
+        use super::super::is_valid_client_status_syncing_transition;
+        use super::super::is_valid_connecting_step_transition;
+        use super::super::is_valid_disconnecting_step_transition;
+        use super::super::is_valid_syncing_step_transition;
+
+        /// Test: Gültige ClientConnectionStatus-Connecting-Übergänge werden als gültig erkannt.
+        #[test]
+        fn test_valid_client_status_connecting_transitions() {
+            // Disconnected → Start ist gültig (Verbindung starten)
+            assert!(is_valid_client_status_connecting_transition(
+                &ClientConnectionStatus::Disconnected,
+                &SetConnectingStep::Start
+            ));
+        }
+
+        /// Test: Ungültige ClientConnectionStatus-Connecting-Übergänge werden blockiert.
+        #[test]
+        fn test_invalid_client_status_connecting_transitions() {
+            // Connecting → Start ist ungültig (bereits beim Verbinden)
+            assert!(!is_valid_client_status_connecting_transition(
+                &ClientConnectionStatus::Connecting,
+                &SetConnectingStep::Start
+            ));
+
+            // Connected → Start ist ungültig (bereits verbunden)
+            assert!(!is_valid_client_status_connecting_transition(
+                &ClientConnectionStatus::Connected,
+                &SetConnectingStep::Start
+            ));
+
+            // Playing → Start ist ungültig (muss erst disconnecten)
+            assert!(!is_valid_client_status_connecting_transition(
+                &ClientConnectionStatus::Playing,
+                &SetConnectingStep::Start
+            ));
+        }
+
+        /// Test: Gültige ClientConnectionStatus-Syncing-Übergänge werden als gültig erkannt.
+        #[test]
+        fn test_valid_client_status_syncing_transitions() {
+            // Connected → Start ist gültig (Sync starten)
+            assert!(is_valid_client_status_syncing_transition(
+                &ClientConnectionStatus::Connected,
+                &SetSyncingStep::Start
+            ));
+        }
+
+        /// Test: Ungültige ClientConnectionStatus-Syncing-Übergänge werden blockiert.
+        #[test]
+        fn test_invalid_client_status_syncing_transitions() {
+            // Disconnected → Start ist ungültig (nicht verbunden)
+            assert!(!is_valid_client_status_syncing_transition(
+                &ClientConnectionStatus::Disconnected,
+                &SetSyncingStep::Start
+            ));
+
+            // Playing → Start ist ungültig (bereits am Spielen)
+            assert!(!is_valid_client_status_syncing_transition(
+                &ClientConnectionStatus::Playing,
+                &SetSyncingStep::Start
+            ));
+        }
+
+        /// Test: Gültige ClientConnectionStatus-Disconnecting-Übergänge werden als gültig erkannt.
+        #[test]
+        fn test_valid_client_status_disconnecting_transitions() {
+            // Playing → Start ist gültig (Disconnect starten)
+            assert!(is_valid_client_status_disconnecting_transition(
+                &ClientConnectionStatus::Playing,
+                &SetDisconnectingStep::Start
+            ));
+
+            // Connecting → Start ist gültig (Verbindung abbrechen)
+            assert!(is_valid_client_status_disconnecting_transition(
+                &ClientConnectionStatus::Connecting,
+                &SetDisconnectingStep::Start
+            ));
+        }
+
+        /// Test: Gültige ConnectingStep-Übergänge werden als gültig erkannt.
+        #[test]
+        fn test_valid_connecting_step_transitions() {
+            // ResolveAddress → Next ist gültig
+            assert!(is_valid_connecting_step_transition(
+                &ConnectingStep::ResolveAddress,
+                &SetConnectingStep::Next
+            ));
+
+            // Ready → Done ist gültig
+            assert!(is_valid_connecting_step_transition(
+                &ConnectingStep::Ready,
+                &SetConnectingStep::Done
+            ));
+
+            // Jeder Step → Failed ist gültig
+            assert!(is_valid_connecting_step_transition(
+                &ConnectingStep::ResolveAddress,
+                &SetConnectingStep::Failed
+            ));
+        }
+
+        /// Test: Gültige SyncingStep-Übergänge werden als gültig erkannt.
+        #[test]
+        fn test_valid_syncing_step_transitions() {
+            // RequestWorld → Next ist gültig
+            assert!(is_valid_syncing_step_transition(
+                &SyncingStep::RequestWorld,
+                &SetSyncingStep::Next
+            ));
+
+            // Ready → Done ist gültig
+            assert!(is_valid_syncing_step_transition(
+                &SyncingStep::Ready,
+                &SetSyncingStep::Done
+            ));
+        }
+
+        /// Test: Gültige DisconnectingStep-Übergänge werden als gültig erkannt.
+        #[test]
+        fn test_valid_disconnecting_step_transitions() {
+            // SendDisconnect → Next ist gültig
+            assert!(is_valid_disconnecting_step_transition(
+                &DisconnectingStep::SendDisconnect,
+                &SetDisconnectingStep::Next
+            ));
+
+            // Ready → Done ist gültig
+            assert!(is_valid_disconnecting_step_transition(
+                &DisconnectingStep::Ready,
+                &SetDisconnectingStep::Done
+            ));
         }
     }
 }

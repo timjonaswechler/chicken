@@ -1,2 +1,13 @@
 doc:
     @cargo doc --no-deps --open > /dev/null 2>&1
+
+test *args:
+    #!/usr/bin/env bash
+    set -- {{args}}
+    if [ $# -eq 0 ]; then
+        python3 scripts/test_runner.py
+    elif [ $# -eq 1 ]; then
+        python3 scripts/test_runner.py -c "$1"
+    else
+        python3 scripts/test_runner.py -c "$1" -f "$2"
+    fi

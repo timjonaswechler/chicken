@@ -1,8 +1,5 @@
 use bevy::prelude::Event;
 
-#[cfg(feature = "hosted")]
-use crate::states::session::ClientConnectionStatus;
-
 /// Events for controlling the server startup sequence.
 #[derive(Event, Debug, Clone, Copy)]
 pub enum SetServerStartupStep {
@@ -53,14 +50,6 @@ pub enum SetGoingPrivateStep {
     Done,
     /// Process failed.
     Failed,
-}
-
-/// Event to transition the client connection status.
-#[cfg(feature = "hosted")]
-#[derive(Event, Debug, Clone, Copy)]
-pub struct SetClientConnectionStatus {
-    /// The target client connection status.
-    pub transition: ClientConnectionStatus,
 }
 
 /// Events for controlling the connecting sequence.

@@ -22,7 +22,6 @@ pub(crate) mod states;
 pub use {
     events::session::{
         SetGoingPrivateStep, SetGoingPublicStep, SetServerShutdownStep, SetServerStartupStep,
-        SetServerStatus, SetServerVisibility,
     },
     states::{
         app::AppScope,
@@ -45,9 +44,7 @@ pub use {
             singleplayer::{SetSingleplayerMenu, SetSingleplayerNewGame, SetSingleplayerSavedGame},
             wiki::WikiMenuEvent,
         },
-        session::{
-            SetClientConnectionStatus, SetConnectingStep, SetDisconnectingStep, SetSyncingStep,
-        },
+        session::{SetConnectingStep, SetDisconnectingStep, SetSyncingStep},
     },
     states::{
         menu::{

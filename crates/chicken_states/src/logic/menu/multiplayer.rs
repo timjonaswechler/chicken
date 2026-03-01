@@ -1,7 +1,10 @@
 use {
     crate::{
-        events::menu::multiplayer::{
-            SetJoinGame, SetMultiplayerMenu, SetNewHostGame, SetSavedHostGame,
+        events::{
+            menu::multiplayer::{
+                SetJoinGame, SetMultiplayerMenu, SetNewHostGame, SetSavedHostGame,
+            },
+            session::SetConnectingStep,
         },
         states::{
             menu::{
@@ -11,10 +14,10 @@ use {
                     MultiplayerSetup,
                 },
             },
-            session::{ClientConnectionStatus, ServerStatus, ServerVisibility, SessionType},
+            session::{ServerStatus, ServerVisibility, SessionType},
         },
     },
-    bevy::prelude::{App, AppExtStates, NextState, On, Plugin, Res, ResMut, State},
+    bevy::prelude::{App, AppExtStates, Commands, NextState, On, Plugin, Res, ResMut, State},
 };
 
 pub(super) struct MultiplayerMenuPlugin;
@@ -132,8 +135,7 @@ fn handle_join_game_nav(
     trigger: On<SetJoinGame>,
     current_setup: Res<State<MultiplayerSetup>>,
     mut next_setup: ResMut<NextState<MultiplayerSetup>>,
-    mut next_session_type: ResMut<NextState<SessionType>>,
-    mut next_client_state: ResMut<NextState<ClientConnectionStatus>>,
+    mut commands: Commands,
 ) {
     if *current_setup.get() != MultiplayerSetup::JoinGame {
         return;
@@ -142,8 +144,7 @@ fn handle_join_game_nav(
     match trigger.event() {
         SetJoinGame::Back => next_setup.set(MultiplayerSetup::Overview),
         SetJoinGame::Confirm => {
-            next_session_type.set(SessionType::Client);
-            next_client_state.set(ClientConnectionStatus::Connecting);
+            commands.trigger(SetConnectingStep::Start);
         }
         SetJoinGame::Cancel => next_setup.set(MultiplayerSetup::Overview),
         _ => {}

@@ -2,13 +2,11 @@ use {
     crate::{
         events::{
             menu::PauseMenuEvent,
-            session::{
-                SetClientConnectionStatus, SetConnectingStep, SetDisconnectingStep, SetSyncingStep,
-            },
+            session::{SetConnectingStep, SetDisconnectingStep, SetSyncingStep},
         },
         states::{
             app::AppScope,
-            menu::{PauseMenu, main::MainMenuContext},
+            menu::PauseMenu,
             session::{
                 ClientConnectionStatus, ConnectingStep, DisconnectingStep, ServerShutdownStep,
                 ServerStatus, SessionState, SessionType, SyncingStep,
@@ -96,149 +94,369 @@ fn handle_pause_menu_nav(
     }
 }
 
-fn is_valid_client_connection_transition(
+// =============================================================================
+// VALIDATOR-FUNKTIONEN
+// =============================================================================
+
+/// Validates transitions for ClientConnectionStatus when starting to connect.
+pub(crate) fn is_valid_client_status_connecting_transition(
     from: &ClientConnectionStatus,
-    to: &ClientConnectionStatus,
+    to: &SetConnectingStep,
 ) -> bool {
     matches!(
         (from, to),
         (
             ClientConnectionStatus::Disconnected,
-            ClientConnectionStatus::Connecting
-        ) | (
-            ClientConnectionStatus::Connecting,
-            ClientConnectionStatus::Connected
-        ) | (
-            ClientConnectionStatus::Connecting,
-            ClientConnectionStatus::Disconnected
-        ) | (
-            ClientConnectionStatus::Connected,
-            ClientConnectionStatus::Syncing
-        ) | (
-            ClientConnectionStatus::Syncing,
-            ClientConnectionStatus::Playing
-        ) | (
-            ClientConnectionStatus::Playing,
-            ClientConnectionStatus::Disconnecting
-        ) | (
-            ClientConnectionStatus::Disconnecting,
-            ClientConnectionStatus::Disconnected
-        )
+            SetConnectingStep::Start
+        ) | (ClientConnectionStatus::Connecting, SetConnectingStep::Next)
+            | (ClientConnectionStatus::Connecting, SetConnectingStep::Done)
+            | (_, SetConnectingStep::Failed)
     )
 }
 
-fn on_client_connection_status_event(
-    event: On<SetClientConnectionStatus>,
-    mut next_app_scope: ResMut<NextState<AppScope>>,
+/// Validates transitions for ClientConnectionStatus when starting to sync.
+pub(crate) fn is_valid_client_status_syncing_transition(
+    from: &ClientConnectionStatus,
+    to: &SetSyncingStep,
+) -> bool {
+    matches!(
+        (from, to),
+        (ClientConnectionStatus::Connected, SetSyncingStep::Start)
+            | (ClientConnectionStatus::Syncing, SetSyncingStep::Next)
+            | (ClientConnectionStatus::Syncing, SetSyncingStep::Done)
+            | (_, SetSyncingStep::Failed)
+    )
+}
+
+/// Validates transitions for ClientConnectionStatus when starting to disconnect.
+pub(crate) fn is_valid_client_status_disconnecting_transition(
+    from: &ClientConnectionStatus,
+    to: &SetDisconnectingStep,
+) -> bool {
+    matches!(
+        (from, to),
+        (ClientConnectionStatus::Playing, SetDisconnectingStep::Start)
+            | (
+                ClientConnectionStatus::Disconnecting,
+                SetDisconnectingStep::Next
+            )
+            | (
+                ClientConnectionStatus::Disconnecting,
+                SetDisconnectingStep::Done
+            )
+            | (_, SetDisconnectingStep::Failed)
+            | (
+                ClientConnectionStatus::Connecting,
+                SetDisconnectingStep::Start
+            )
+    )
+}
+
+/// Validates transitions between ConnectingStep states.
+pub(crate) fn is_valid_connecting_step_transition(
+    from: &ConnectingStep,
+    to: &SetConnectingStep,
+) -> bool {
+    matches!(
+        (from, to),
+        (ConnectingStep::ResolveAddress, SetConnectingStep::Next)
+            | (ConnectingStep::OpenSocket, SetConnectingStep::Next)
+            | (ConnectingStep::SendHandshake, SetConnectingStep::Next)
+            | (ConnectingStep::WaitForAccept, SetConnectingStep::Next)
+            | (ConnectingStep::Ready, SetConnectingStep::Done)
+            | (_, SetConnectingStep::Failed)
+    )
+}
+
+/// Validates transitions between SyncingStep states.
+pub(crate) fn is_valid_syncing_step_transition(from: &SyncingStep, to: &SetSyncingStep) -> bool {
+    matches!(
+        (from, to),
+        (SyncingStep::RequestWorld, SetSyncingStep::Next)
+            | (SyncingStep::ReceiveChunks, SetSyncingStep::Next)
+            | (SyncingStep::SpawnEntities, SetSyncingStep::Next)
+            | (SyncingStep::Ready, SetSyncingStep::Done)
+            | (_, SetSyncingStep::Failed)
+    )
+}
+
+/// Validates transitions between DisconnectingStep states.
+pub(crate) fn is_valid_disconnecting_step_transition(
+    from: &DisconnectingStep,
+    to: &SetDisconnectingStep,
+) -> bool {
+    matches!(
+        (from, to),
+        (
+            DisconnectingStep::SendDisconnect,
+            SetDisconnectingStep::Next
+        ) | (DisconnectingStep::WaitForAck, SetDisconnectingStep::Next)
+            | (DisconnectingStep::Cleanup, SetDisconnectingStep::Next)
+            | (DisconnectingStep::Ready, SetDisconnectingStep::Done)
+            | (_, SetDisconnectingStep::Failed)
+    )
+}
+
+// =============================================================================
+// OBSERVER
+// =============================================================================
+
+fn on_connecting_step(
+    event: On<SetConnectingStep>,
+    current_parent: Res<State<ClientConnectionStatus>>,
+    current: Option<Res<State<ConnectingStep>>>,
+    mut next_client_status: ResMut<NextState<ClientConnectionStatus>>,
+    mut next_connecting_step: Option<ResMut<NextState<ConnectingStep>>>,
     mut next_session_type: ResMut<NextState<SessionType>>,
-    mut next_session_state: ResMut<NextState<SessionState>>,
-    mut next_state: ResMut<NextState<ClientConnectionStatus>>,
-    current: Res<State<ClientConnectionStatus>>,
+    mut next_app_scope: ResMut<NextState<AppScope>>,
 ) {
-    if !is_valid_client_connection_transition(current.get(), &event.transition) {
+    // Validate parent state transition
+    if !is_valid_client_status_connecting_transition(current_parent.get(), event.event()) {
         warn!(
-            "Unexpected ClientConnectionStatus transition: {:?} -> {:?}",
-            current.get(),
-            event.transition
+            "Invalid ClientConnectionStatus transition for ConnectingStep: {:?} with parent status {:?}",
+            event.event(),
+            current_parent.get()
         );
         return;
     }
 
-    match event.transition {
-        ClientConnectionStatus::Connecting => {
-            next_state.set(ClientConnectionStatus::Connecting);
-            next_session_type.set(SessionType::Client);
-        }
-        ClientConnectionStatus::Connected => {
-            next_state.set(ClientConnectionStatus::Connected);
-        }
-        ClientConnectionStatus::Syncing => {
-            next_state.set(ClientConnectionStatus::Syncing);
-            next_app_scope.set(AppScope::Session);
-        }
-        ClientConnectionStatus::Playing => {
-            next_state.set(ClientConnectionStatus::Playing);
-            next_session_state.set(SessionState::Active);
-        }
-        ClientConnectionStatus::Disconnecting => {
-            next_state.set(ClientConnectionStatus::Disconnecting);
-        }
-        ClientConnectionStatus::Disconnected => {
-            next_state.set(ClientConnectionStatus::Disconnected);
-        }
-    }
-}
-
-fn on_connecting_step(
-    event: On<SetConnectingStep>,
-    current: Res<State<ConnectingStep>>,
-    mut next_state: ResMut<NextState<ConnectingStep>>,
-    mut next_client_status: ResMut<NextState<ClientConnectionStatus>>,
-) {
     match *event.event() {
+        // Start: Wechselt ClientConnectionStatus zu Connecting UND setzt Step auf ResolveAddress
         SetConnectingStep::Start => {
-            next_state.set(ConnectingStep::ResolveAddress);
+            next_client_status.set(ClientConnectionStatus::Connecting);
+            if let Some(ref mut next_step) = next_connecting_step {
+                next_step.set(ConnectingStep::ResolveAddress);
+            }
         }
-        SetConnectingStep::Next => match current.get() {
-            ConnectingStep::ResolveAddress => next_state.set(ConnectingStep::OpenSocket),
-            ConnectingStep::OpenSocket => next_state.set(ConnectingStep::SendHandshake),
-            ConnectingStep::SendHandshake => next_state.set(ConnectingStep::WaitForAccept),
-            ConnectingStep::WaitForAccept => next_state.set(ConnectingStep::Ready),
-            ConnectingStep::Ready => {}
-        },
-        SetConnectingStep::Done => {
-            next_client_status.set(ClientConnectionStatus::Connected);
-        }
-        SetConnectingStep::Failed => {
-            next_client_status.set(ClientConnectionStatus::Disconnected);
+        // Next/Done/Failed: ConnectingStep muss existieren (Status muss Connecting sein)
+        _ => {
+            let current = match current {
+                Some(c) => *c.get(),
+                None => {
+                    warn!(
+                        "ConnectingStep does not exist - ClientConnectionStatus must be Connecting first"
+                    );
+                    return;
+                }
+            };
+
+            // Validate step transition
+            if !is_valid_connecting_step_transition(&current, event.event()) {
+                warn!(
+                    "Invalid ConnectingStep transition: {:?} -> {:?}",
+                    current,
+                    event.event()
+                );
+                return;
+            }
+
+            match (current, event.event()) {
+                (ConnectingStep::ResolveAddress, SetConnectingStep::Next) => {
+                    if let Some(ref mut next_step) = next_connecting_step {
+                        next_step.set(ConnectingStep::OpenSocket);
+                    }
+                }
+                (ConnectingStep::OpenSocket, SetConnectingStep::Next) => {
+                    if let Some(ref mut next_step) = next_connecting_step {
+                        next_step.set(ConnectingStep::SendHandshake);
+                    }
+                }
+                (ConnectingStep::SendHandshake, SetConnectingStep::Next) => {
+                    if let Some(ref mut next_step) = next_connecting_step {
+                        next_step.set(ConnectingStep::WaitForAccept);
+                    }
+                }
+                (ConnectingStep::WaitForAccept, SetConnectingStep::Next) => {
+                    if let Some(ref mut next_step) = next_connecting_step {
+                        next_step.set(ConnectingStep::Ready);
+                    }
+                }
+                (ConnectingStep::Ready, SetConnectingStep::Done) => {
+                    next_client_status.set(ClientConnectionStatus::Connected);
+                }
+                (_, SetConnectingStep::Failed) => {
+                    next_client_status.set(ClientConnectionStatus::Disconnected);
+                    next_session_type.set(SessionType::None);
+                    next_app_scope.set(AppScope::Menu);
+                    // TODO: Notification Error
+                }
+                _ => {}
+            }
         }
     }
 }
 
 fn on_syncing_step(
     event: On<SetSyncingStep>,
-    current: Res<State<SyncingStep>>,
-    mut next_state: ResMut<NextState<SyncingStep>>,
+    current_parent: Res<State<ClientConnectionStatus>>,
+    current: Option<Res<State<SyncingStep>>>,
     mut next_client_status: ResMut<NextState<ClientConnectionStatus>>,
+    mut next_syncing_step: Option<ResMut<NextState<SyncingStep>>>,
+    mut next_session_state: ResMut<NextState<SessionState>>,
+    mut next_app_scope: ResMut<NextState<AppScope>>,
 ) {
+    // Validate parent state transition
+    if !is_valid_client_status_syncing_transition(current_parent.get(), event.event()) {
+        warn!(
+            "Invalid ClientConnectionStatus transition for SyncingStep: {:?} with parent status {:?}",
+            event.event(),
+            current_parent.get()
+        );
+        return;
+    }
+
     match *event.event() {
+        // Start: Wechselt ClientConnectionStatus zu Syncing UND setzt Step auf RequestWorld
         SetSyncingStep::Start => {
-            next_state.set(SyncingStep::RequestWorld);
+            next_client_status.set(ClientConnectionStatus::Syncing);
+            next_app_scope.set(AppScope::Session);
+            if let Some(ref mut next_step) = next_syncing_step {
+                next_step.set(SyncingStep::RequestWorld);
+            }
         }
-        SetSyncingStep::Next => match current.get() {
-            SyncingStep::RequestWorld => next_state.set(SyncingStep::ReceiveChunks),
-            SyncingStep::ReceiveChunks => next_state.set(SyncingStep::SpawnEntities),
-            SyncingStep::SpawnEntities => next_state.set(SyncingStep::Ready),
-            SyncingStep::Ready => {}
-        },
-        SetSyncingStep::Done => {
-            next_client_status.set(ClientConnectionStatus::Playing);
-        }
-        SetSyncingStep::Failed => {
-            todo!("Failed to sync");
+        // Next/Done/Failed: SyncingStep muss existieren (Status muss Syncing sein)
+        _ => {
+            let current = match current {
+                Some(c) => *c.get(),
+                None => {
+                    warn!(
+                        "SyncingStep does not exist - ClientConnectionStatus must be Syncing first"
+                    );
+                    return;
+                }
+            };
+
+            // Validate step transition
+            if !is_valid_syncing_step_transition(&current, event.event()) {
+                warn!(
+                    "Invalid SyncingStep transition: {:?} -> {:?}",
+                    current,
+                    event.event()
+                );
+                return;
+            }
+
+            match (current, event.event()) {
+                (SyncingStep::RequestWorld, SetSyncingStep::Next) => {
+                    if let Some(ref mut next_step) = next_syncing_step {
+                        next_step.set(SyncingStep::ReceiveChunks);
+                    }
+                }
+                (SyncingStep::ReceiveChunks, SetSyncingStep::Next) => {
+                    if let Some(ref mut next_step) = next_syncing_step {
+                        next_step.set(SyncingStep::SpawnEntities);
+                    }
+                }
+                (SyncingStep::SpawnEntities, SetSyncingStep::Next) => {
+                    if let Some(ref mut next_step) = next_syncing_step {
+                        next_step.set(SyncingStep::Ready);
+                    }
+                }
+                (SyncingStep::Ready, SetSyncingStep::Done) => {
+                    next_client_status.set(ClientConnectionStatus::Playing);
+                    next_session_state.set(SessionState::Active);
+                }
+                (_, SetSyncingStep::Failed) => {
+                    next_client_status.set(ClientConnectionStatus::Disconnected);
+                    next_app_scope.set(AppScope::Menu);
+                    // TODO: Notification Error
+                }
+                _ => {}
+            }
         }
     }
 }
 
 fn on_set_disconnecting_step(
     event: On<SetDisconnectingStep>,
-    shutdown_state: Res<State<DisconnectingStep>>,
-    mut next_main_menu: ResMut<NextState<MainMenuContext>>,
+    current_parent: Res<State<ClientConnectionStatus>>,
+    shutdown_state: Option<Res<State<DisconnectingStep>>>,
     mut next_app_scope: ResMut<NextState<AppScope>>,
-    mut next_state: ResMut<NextState<DisconnectingStep>>,
-    mut next_session_type: ResMut<NextState<SessionType>>,
     mut next_client_status: ResMut<NextState<ClientConnectionStatus>>,
+    mut next_disconnecting_step: Option<ResMut<NextState<DisconnectingStep>>>,
+    mut next_session_type: ResMut<NextState<SessionType>>,
 ) {
-    match *event {
+    // Validate parent state transition
+    if !is_valid_client_status_disconnecting_transition(current_parent.get(), event.event()) {
+        warn!(
+            "Invalid ClientConnectionStatus transition for DisconnectingStep: {:?} with parent status {:?}",
+            event.event(),
+            current_parent.get()
+        );
+        return;
+    }
+
+    match *event.event() {
+        // Start: Wechselt ClientConnectionStatus zu Disconnecting UND setzt Step auf SendDisconnect
         SetDisconnectingStep::Start => {
-            next_state.set(DisconnectingStep::SendDisconnect);
-        }
-        SetDisconnectingStep::Next => match **shutdown_state {
-            DisconnectingStep::SendDisconnect => {
-                next_state.set(DisconnectingStep::WaitForAck);
+            next_client_status.set(ClientConnectionStatus::Disconnecting);
+            if let Some(ref mut next_step) = next_disconnecting_step {
+                next_step.set(DisconnectingStep::SendDisconnect);
             }
-            DisconnectingStep::WaitForAck => {
-                next_state.set(DisconnectingStep::Cleanup);
+        }
+        // Next/Done/Failed: DisconnectingStep muss existieren (Status muss Disconnecting sein)
+        _ => {
+            let current = match shutdown_state {
+                Some(c) => *c.get(),
+                None => {
+                    warn!(
+                        "DisconnectingStep does not exist - ClientConnectionStatus must be Disconnecting first"
+                    );
+                    return;
+                }
+            };
+
+            // Validate step transition
+            if !is_valid_disconnecting_step_transition(&current, event.event()) {
+                warn!(
+                    "Invalid DisconnectingStep transition: {:?} -> {:?}",
+                    current,
+                    event.event()
+                );
+                return;
+            }
+
+            match (current, event.event()) {
+                (DisconnectingStep::SendDisconnect, SetDisconnectingStep::Next) => {
+                    if let Some(ref mut next_step) = next_disconnecting_step {
+                        next_step.set(DisconnectingStep::WaitForAck);
+                    }
+                }
+                (DisconnectingStep::WaitForAck, SetDisconnectingStep::Next) => {
+                    if let Some(ref mut next_step) = next_disconnecting_step {
+                        next_step.set(DisconnectingStep::Cleanup);
+                    }
+                }
+                (DisconnectingStep::Cleanup, SetDisconnectingStep::Next) => {
+                    if let Some(ref mut next_step) = next_disconnecting_step {
+                        next_step.set(DisconnectingStep::Ready);
+                    }
+                }
+                (DisconnectingStep::Ready, SetDisconnectingStep::Done) => {
+                    next_app_scope.set(AppScope::Menu);
+                    next_session_type.set(SessionType::None);
+                }
+                (_, SetDisconnectingStep::Failed) => {
+                    next_app_scope.set(AppScope::Menu);
+                    next_session_type.set(SessionType::None);
+                    // TODO: Notification Error
+                }
+                _ => {}
+            }
+            DisconnectingStep::Cleanup => {
+                next_state.set(DisconnectingStep::Ready);
+            }
+        }
+
+        /// Setup für Client-Tests: SessionType ist Client, aber noch nicht verbunden
+        pub fn setup_test_app_for_client() -> App {
+            let mut app = test_app();
+            update_app(&mut app, 1);
+
+            #[cfg(feature = "hosted")]
+            {
+                let app_scope = app.world().resource::<State<AppScope>>();
+                assert_eq!(app_scope.get(), &AppScope::Splash);
             }
             DisconnectingStep::Cleanup => {
                 next_state.set(DisconnectingStep::Ready);

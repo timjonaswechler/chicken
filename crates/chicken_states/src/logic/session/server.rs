@@ -550,9 +550,12 @@ mod tests {
     mod helpers {
 
         use crate::{
-            events::session::{
-                SetGoingPrivateStep, SetGoingPublicStep, SetServerShutdownStep,
-                SetServerStartupStep, SetSessionType,
+            events::{
+                app::SetAppScope,
+                session::{
+                    SetGoingPrivateStep, SetGoingPublicStep, SetServerShutdownStep,
+                    SetServerStartupStep, SetSessionType,
+                },
             },
             logic::{app::AppLogicPlugin, session::server::ServerSessionPlugin},
             states::{
@@ -599,19 +602,12 @@ mod tests {
             {
                 let session_type_state = app.world().resource::<State<SessionType>>();
                 assert_eq!(session_type_state.get(), &SessionType::None);
-            }
 
-            #[cfg(feature = "hosted")]
-            {
                 let app_scope = app.world().resource::<State<AppScope>>();
                 assert_eq!(app_scope.get(), &AppScope::Splash);
-            }
 
-            #[cfg(feature = "hosted")]
-            {
-                let mut next_app_scope = app.world_mut().resource_mut::<NextState<AppScope>>();
-                next_app_scope.set(AppScope::Session);
-                app.update();
+                app.world_mut().trigger(SetAppScope::To(AppScope::Session));
+                update_app(&mut app, 1);
             }
 
             {

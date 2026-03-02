@@ -549,14 +549,19 @@ mod tests {
 
     mod helpers {
 
-        #[cfg(feature = "hosted")]
-        use crate::logic::app::on_change_app_scope;
-
         use crate::{
-            AppScope, GoingPrivateStep, GoingPublicStep, ServerShutdownStep, ServerStartupStep,
-            ServerStatus, ServerVisibility, SessionState, SessionType, SetGoingPrivateStep,
-            SetGoingPublicStep, SetServerShutdownStep, SetServerStartupStep,
-            logic::session::server::ServerSessionPlugin,
+            events::session::{
+                SetGoingPrivateStep, SetGoingPublicStep, SetServerShutdownStep,
+                SetServerStartupStep, SetSessionType,
+            },
+            logic::{app::AppLogicPlugin, session::server::ServerSessionPlugin},
+            states::{
+                app::AppScope,
+                session::{
+                    GoingPrivateStep, GoingPublicStep, ServerShutdownStep, ServerStartupStep,
+                    ServerStatus, ServerVisibility, SessionState, SessionType,
+                },
+            },
         };
 
         use bevy::{prelude::*, state::app::StatesPlugin};
@@ -569,10 +574,13 @@ mod tests {
 
         pub fn test_app() -> App {
             let mut app = App::new();
-            app.add_plugins((MinimalPlugins, StatesPlugin, ServerSessionPlugin))
-                .init_state::<AppScope>();
-            #[cfg(feature = "hosted")]
-            app.add_observer(on_change_app_scope);
+            app.add_plugins((
+                MinimalPlugins,
+                StatesPlugin,
+                ServerSessionPlugin,
+                AppLogicPlugin,
+            ));
+
             app
         }
 
@@ -609,26 +617,27 @@ mod tests {
             {
                 let app_scope = app.world().resource::<State<AppScope>>();
                 assert_eq!(app_scope.get(), &AppScope::Session);
+
                 let session_state = app.world().resource::<State<SessionState>>();
                 assert_eq!(session_state.get(), &SessionState::Setup);
             }
 
             {
-                let mut next_session_type =
-                    app.world_mut().resource_mut::<NextState<SessionType>>();
-                next_session_type.set(session_type);
-                app.update();
+                app.world_mut().trigger(SetSessionType::To(session_type));
+                update_app(&mut app, 1);
             }
+
             {
                 let session_type_state = app.world().resource::<State<SessionType>>();
                 assert_eq!(session_type_state.get(), &session_type);
+
                 let server_status = app.world().resource::<State<ServerStatus>>();
                 assert_eq!(server_status.get(), &ServerStatus::Offline);
             }
 
             {
                 app.world_mut().trigger(SetServerStartupStep::Start);
-                app.update();
+                update_app(&mut app, 1);
 
                 let server_status = app.world().resource::<State<ServerStatus>>();
                 assert_eq!(server_status.get(), &ServerStatus::Starting);

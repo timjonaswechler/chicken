@@ -1,4 +1,4 @@
-pub(crate) mod app;
+pub mod app;
 #[cfg(feature = "hosted")]
-pub(crate) mod menu;
-pub(crate) mod session;
+pub mod menu;
+pub mod session;

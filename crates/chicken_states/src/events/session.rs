@@ -1,4 +1,12 @@
+use crate::states::session::SessionType;
 use bevy::prelude::Event;
+
+#[derive(Event, Debug, Clone, Copy)]
+/// Events for controlling the session type.
+pub enum SetSessionType {
+    /// Set the session type to the given value.
+    To(SessionType),
+}
 
 /// Events for controlling the server startup sequence.
 #[derive(Event, Debug, Clone, Copy)]

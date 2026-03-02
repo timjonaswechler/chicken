@@ -1,17 +1,20 @@
 use {
-    crate::states::app::AppScope,
-    bevy::prelude::{App, AppExtStates, Plugin},
+    crate::{
+        events::session::SetSessionType,
+        states::app::AppScope,
+        states::session::{SessionState, SessionType},
+    },
+    bevy::{
+        input::InputPlugin,
+        prelude::{App, AppExtStates, NextState, On, Plugin, Res, ResMut, State, warn},
+    },
 };
 
 #[cfg(feature = "hosted")]
 use {
-    crate::{
-        events::app::ChangeAppScope,
-        states::{menu::main::MainMenuContext, session::SessionType},
-    },
+    crate::{events::app::SetAppScope, states::menu::main::MainMenuContext},
     bevy::prelude::{
-        in_state, ButtonInput, IntoScheduleConfigs, KeyCode, NextState, On, OnEnter, Res, ResMut,
-        Resource, Time, Update,
+        ButtonInput, IntoScheduleConfigs, KeyCode, OnEnter, Resource, Time, Update, in_state,
     },
 };
 
@@ -19,7 +22,13 @@ pub struct AppLogicPlugin;
 
 impl Plugin for AppLogicPlugin {
     fn build(&self, app: &mut App) {
-        app.init_state::<AppScope>();
+        if !app.is_plugin_added::<InputPlugin>() {
+            app.add_plugins(InputPlugin);
+        }
+        app.init_state::<AppScope>()
+            .init_state::<SessionType>()
+            .add_sub_state::<SessionState>()
+            .add_observer(on_set_session_type);
 
         #[cfg(feature = "hosted")]
         {
@@ -70,14 +79,43 @@ fn handle_splash_screen(
 
 #[cfg(feature = "hosted")]
 pub(crate) fn on_change_app_scope(
-    event: On<ChangeAppScope>,
+    event: On<SetAppScope>,
     mut state: ResMut<NextState<AppScope>>,
     mut session_type: ResMut<NextState<SessionType>>,
     mut menu_state: ResMut<NextState<MainMenuContext>>,
 ) {
-    if event.transition == AppScope::Menu {
+    if matches!(event.event(), SetAppScope::To(AppScope::Menu)) {
         state.set(AppScope::Menu);
         session_type.set(SessionType::None);
         menu_state.set(MainMenuContext::Main);
+    }
+}
+
+/// Validates transitions for SessionType.
+pub(crate) fn is_valid_session_type_transition(from: &SessionType, to: &SetSessionType) -> bool {
+    matches!(
+        (from, to),
+        (SessionType::None, SetSessionType::To(_)) | (_, SetSessionType::To(SessionType::None))
+    )
+}
+
+pub fn on_set_session_type(
+    event: On<SetSessionType>,
+    current: Res<State<SessionType>>,
+    mut next_session_type: ResMut<NextState<SessionType>>,
+) {
+    if !is_valid_session_type_transition(current.get(), event.event()) {
+        warn!(
+            "Invalid ServerStatus transition for ServerStartupStep: {:?} with parent status {:?}",
+            event.event(),
+            current.get()
+        );
+        return;
+    }
+
+    match *event.event() {
+        SetSessionType::To(session_type) => {
+            next_session_type.set(session_type);
+        }
     }
 }

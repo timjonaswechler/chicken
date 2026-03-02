@@ -15,52 +15,20 @@ compile_error!("You must enable either the 'hosted' or 'headless' feature to bui
 #[cfg(all(feature = "hosted", feature = "headless"))]
 compile_error!("You cannot enable both the 'hosted' and 'headless' features.");
 
-pub(crate) mod events;
-pub(crate) mod logic;
-pub(crate) mod states;
+/// Here are all events that can be used to change the states that are used for the generell app logic.
+pub mod events;
 
-pub use {
-    events::session::{
-        SetGoingPrivateStep, SetGoingPublicStep, SetServerShutdownStep, SetServerStartupStep,
-    },
-    states::{
-        app::AppScope,
-        session::{
-            GoingPrivateStep, GoingPublicStep, PhysicsSimulation, ServerShutdownStep,
-            ServerStartupStep, ServerStatus, ServerVisibility, SessionState, SessionType,
-        },
-    },
-};
+// TODO: Observer Entities gebunden hinzu fügenn oder entfernen
+/// In this module, the app logic is implemented.
+/// Most of the logic ist implemented as observers.
+/// to provide a clean state change it is nesseary to add the observers that are available to you to combine witha controll entity.
+pub mod logic;
 
-#[cfg(feature = "hosted")]
-pub use {
-    events::{
-        app::ChangeAppScope,
-        menu::{
-            PauseMenuEvent,
-            main::MainMenuInteraction,
-            multiplayer::{SetJoinGame, SetMultiplayerMenu, SetNewHostGame, SetSavedHostGame},
-            settings::SettingsMenuEvent,
-            singleplayer::{SetSingleplayerMenu, SetSingleplayerNewGame, SetSingleplayerSavedGame},
-            wiki::WikiMenuEvent,
-        },
-        session::{SetConnectingStep, SetDisconnectingStep, SetSyncingStep},
-    },
-    states::{
-        menu::{
-            PauseMenu,
-            main::MainMenuContext,
-            multiplayer::{
-                HostNewGameMenuScreen, HostSavedGameMenuScreen, JoinGameMenuScreen,
-                MultiplayerSetup,
-            },
-            settings::SettingsMenuScreen,
-            singleplayer::{NewGameMenuScreen, SavedGameMenuScreen, SingleplayerSetup},
-            wiki::WikiMenuScreen,
-        },
-        session::{ClientConnectionStatus, ConnectingStep, DisconnectingStep, SyncingStep},
-    },
-};
+/// Contains all states and events to change the states that are used in the game.
+/// The user is intended to use the provided Events to get a clean state change.
+/// In Some cases, changing one state has an impact on other states.
+/// For example, changing the app scope may also affect the session state.
+pub mod states;
 
 use bevy::prelude::{App, Plugin};
 

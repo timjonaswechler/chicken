@@ -28,16 +28,13 @@ impl Plugin for ClientSessionPlugin {
             .add_sub_state::<SyncingStep>()
             .add_sub_state::<DisconnectingStep>()
             .add_sub_state::<PauseMenu>()
-
-            .add_observer(on_client_connection_status_event)
             .add_observer(on_connecting_step)
             .add_observer(on_syncing_step)
             .add_observer(on_set_disconnecting_step)
-
-            .add_observer(handle_pause_menu_nav) // TODO: evtl. falscher platz.
+            .add_observer(handle_pause_menu_nav)
             .add_systems(
                 Update,
-                toggle_game_menu // TODO: evtl. falscher platz.
+                toggle_game_menu
                     .run_if(in_state(SessionState::Active).or(in_state(SessionState::Paused))),
             );
     }
@@ -466,10 +463,16 @@ mod tests {
     mod helpers {
 
         use crate::{
-            AppScope, ClientConnectionStatus, ConnectingStep, DisconnectingStep, SessionState,
-            SessionType, SetConnectingStep, SetDisconnectingStep, SetSyncingStep, SyncingStep,
-            logic::{
-                app::on_change_app_scope, menu::MenuPlugin, session::client::ClientSessionPlugin,
+            events::session::{
+                SetConnectingStep, SetDisconnectingStep, SetSessionType, SetSyncingStep,
+            },
+            logic::{app::AppLogicPlugin, session::client::ClientSessionPlugin},
+            states::{
+                app::AppScope,
+                session::{
+                    ClientConnectionStatus, ConnectingStep, DisconnectingStep, SessionState,
+                    SessionType, SyncingStep,
+                },
             },
         };
 
@@ -486,13 +489,9 @@ mod tests {
                 StatesPlugin,
                 InputPlugin,
                 ClientSessionPlugin,
-                MenuPlugin,
-            ))
-            .init_state::<AppScope>()
-            .init_state::<SessionType>()
-            .add_sub_state::<SessionState>();
-            #[cfg(feature = "hosted")]
-            app.add_observer(on_change_app_scope);
+                AppLogicPlugin,
+            ));
+
             app
         }
 
@@ -518,7 +517,7 @@ mod tests {
             {
                 let mut next_app_scope = app.world_mut().resource_mut::<NextState<AppScope>>();
                 next_app_scope.set(AppScope::Menu);
-                app.update();
+                update_app(&mut app, 1);
             }
 
             #[cfg(feature = "hosted")]
@@ -530,10 +529,9 @@ mod tests {
             }
 
             {
-                let mut next_session_type =
-                    app.world_mut().resource_mut::<NextState<SessionType>>();
-                next_session_type.set(SessionType::Client);
-                app.update();
+                app.world_mut()
+                    .trigger(SetSessionType::To(SessionType::Client));
+                update_app(&mut app, 1);
             }
 
             {
@@ -878,7 +876,7 @@ mod tests {
     mod validator_tests {
 
         use super::*;
-        use crate::{ConnectingStep, DisconnectingStep, SyncingStep};
+        use crate::states::session::{ConnectingStep, DisconnectingStep, SyncingStep};
 
         // Importiere alle Validator-Funktionen
         use super::super::is_valid_client_status_connecting_transition;

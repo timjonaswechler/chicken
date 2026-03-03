@@ -33,8 +33,8 @@ serde_json = "1.0"
 
 [features]
 default = ["aeronet_replicon/server", "aeronet_webtransport/server", "bevy_replicon/server","client"]
-server = ["chicken_states/server"]
-client = ["aeronet_replicon/client", "aeronet_webtransport/client", "bevy_replicon/client", "chicken_states/client"]
+server = ["chicken_states/headless"]
+client = ["aeronet_replicon/client", "aeronet_webtransport/client", "bevy_replicon/client", "chicken_states/hosted"]
 
 [lints]
 workspace = true

@@ -5,16 +5,19 @@ pub use discovery::{DiscoveredServers, DiscoveryControl, DiscoveryTask};
 
 use {
     crate::{local::LocalClient, shared::PlayerNameMessage},
-    aeronet::io::{
+    Aeron::io::{
         Session,
         connection::{Disconnect, Disconnected},
     },
-    aeronet_io::connection::DisconnectReason,
-    aeronet_replicon::client::AeronetRepliconClient,
-    aeronet_webtransport::client::{WebTransportClient, WebTransportClientPlugin},
+    Aeron_io::connection::DisconnectReason,
+    Aeron_replicon::client::AeronetRepliconClient,
+    Aeron_webtransport::client::{WebTransportClient, WebTransportClientPlugin},
     bevy::prelude::*,
     chicken_notifications::Notify,
-    chicken_states::{ClientShutdownStep, ClientStatus, SetClientShutdownStep, SetClientStatus},
+    chicken_states::{
+        ClientConnectionStatus, ConnectingStep, DisconnectingStep, SetConnectingStep,
+        SetDisconnectingStep, SetSyncingStep,
+    },
     discovery::ClientDiscoveryPlugin,
     helpers::client_config,
 };

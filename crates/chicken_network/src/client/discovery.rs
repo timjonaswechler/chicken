@@ -5,7 +5,7 @@ use {
         tasks::{AsyncComputeTaskPool, Task, futures::check_ready},
     },
     chicken_settings_content::networking::NetworkingSettings,
-    chicken_states::MultiplayerSetup,
+    chicken_states::MultiplayerMenuScreen,
     std::{net::UdpSocket, time::Duration},
 };
 
@@ -15,12 +15,18 @@ impl Plugin for ClientDiscoveryPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<DiscoveredServers>()
             .init_resource::<DiscoveryControl>()
-            .add_systems(OnEnter(MultiplayerSetup::JoinGame), client_discovery_reset)
-            .add_systems(OnExit(MultiplayerSetup::JoinGame), client_discovery_cleanup)
+            .add_systems(
+                OnEnter(MultiplayerMenuScreen::JoinGame),
+                client_discovery_reset,
+            )
+            .add_systems(
+                OnExit(MultiplayerMenuScreen::JoinGame),
+                client_discovery_cleanup,
+            )
             .add_systems(
                 Update,
                 (client_discover_server, client_discover_server_collect)
-                    .run_if(in_state(MultiplayerSetup::JoinGame)),
+                    .run_if(in_state(MultiplayerMenuScreen::JoinGame)),
             );
     }
 }

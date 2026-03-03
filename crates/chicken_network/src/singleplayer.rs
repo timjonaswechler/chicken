@@ -7,7 +7,7 @@ use {
     aeronet_webtransport::server::{WebTransportServer, WebTransportServerClient},
     bevy::prelude::*,
     // bevy_replicon::RepliconPlugins,
-    chicken_states::{
+    chicken_states::states::session::{
         SessionType, SetSingleplayerShutdownStep, SetSingleplayerStatus, SingleplayerShutdownStep,
         SingleplayerStatus,
     },

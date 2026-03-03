@@ -1,15 +1,15 @@
 use {
-    super::main::MainMenuContext,
+    crate::states::menu::main::MainMenuScreen,
     bevy::prelude::{Reflect, StateSet, SubStates},
 };
 
 /// Tracks the current screen within the multiplayer setup flow.
 ///
 /// Manages the navigation between hosting and joining options.
-/// Only active when `MainMenuContext` is `Multiplayer`.
+/// Only active when `MainMenuScreen` is `Multiplayer`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, SubStates, Reflect)]
-#[source(MainMenuContext = MainMenuContext::Multiplayer)]
-pub enum MultiplayerSetup {
+#[source(MainMenuScreen = MainMenuScreen::Multiplayer)]
+pub enum MultiplayerMenuScreen {
     /// Main multiplayer menu with options to host or join games.
     #[default]
     Overview,
@@ -24,9 +24,9 @@ pub enum MultiplayerSetup {
 /// Tracks the current configuration step when hosting a new multiplayer game.
 ///
 /// Guides the user through server, world, and save configuration.
-/// Only active when `MultiplayerSetup` is `HostNewGame`.
+/// Only active when `MultiplayerMenuScreen` is `HostNewGame`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, SubStates, Reflect)]
-#[source(MultiplayerSetup = MultiplayerSetup::HostNewGame)]
+#[source(MultiplayerMenuScreen = MultiplayerMenuScreen::HostNewGame)]
 pub enum HostNewGameMenuScreen {
     /// Configure server settings (name, password, max players, visibility).
     #[default]
@@ -40,9 +40,9 @@ pub enum HostNewGameMenuScreen {
 /// Tracks the current screen when hosting from a saved game.
 ///
 /// Manages save selection and server configuration.
-/// Only active when `MultiplayerSetup` is `HostSavedGame`.
+/// Only active when `MultiplayerMenuScreen` is `HostSavedGame`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, SubStates, Reflect)]
-#[source(MultiplayerSetup = MultiplayerSetup::HostSavedGame)]
+#[source(MultiplayerMenuScreen = MultiplayerMenuScreen::HostSavedGame)]
 pub enum HostSavedGameMenuScreen {
     /// Select a saved game file to host.
     #[default]
@@ -54,9 +54,9 @@ pub enum HostSavedGameMenuScreen {
 /// Tracks the current screen when joining a multiplayer game.
 ///
 /// Manages server discovery and connection setup.
-/// Only active when `MultiplayerSetup` is `JoinGame`.
+/// Only active when `MultiplayerMenuScreen` is `JoinGame`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, SubStates, Reflect)]
-#[source(MultiplayerSetup = MultiplayerSetup::JoinGame)]
+#[source(MultiplayerMenuScreen = MultiplayerMenuScreen::JoinGame)]
 pub enum JoinGameMenuScreen {
     /// Server browser and connection interface.
     #[default]

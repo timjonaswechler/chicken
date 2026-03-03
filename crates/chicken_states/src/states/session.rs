@@ -43,6 +43,27 @@ pub enum SessionState {
     Paused,
 }
 
+/// Tracks which pause menu screen is currently active.
+///
+/// This is a substate that is only valid when the session is in the `Paused` state.
+/// It manages the navigation flow within the pause menu system.
+#[cfg(feature = "hosted")]
+#[derive(SubStates, Default, Debug, Clone, Copy, PartialEq, Eq, Hash, Reflect)]
+#[source(SessionState = SessionState::Paused)]
+pub enum PauseMenu {
+    /// Main pause menu with primary options (Resume, Settings, Save, Load, Exit).
+    #[default]
+    Overview,
+    /// Settings configuration screen for audio, video, and controls.
+    Settings,
+    /// Save game slot selection screen.
+    Save,
+    /// Load game slot selection screen.
+    Load,
+    /// Exit confirmation dialog.
+    Exit,
+}
+
 // --- Server Status (Singleplayer & DedicatedServer) ---
 
 /// Tracks the lifecycle state of a server session.

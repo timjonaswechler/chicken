@@ -6,10 +6,10 @@
 AppScope
 ├── Splash (default) ────────────── Client only: Initial splash/intro screen
 ├── Menu ────────────────────────── Client only: Main menu
-│   └── MainMenuContext
+│   └── MainMenuScreen
 │       ├── Main (default)
 │       ├── Singleplayer
-│       │   └── SingleplayerSetup
+│       │   └── SingleplayerMenuScreen
 │       │       ├── Overview (default)
 │       │       ├── NewGame
 │       │       │   └── NewGameMenuScreen
@@ -20,7 +20,7 @@ AppScope
 │       │           └── SavedGameMenuScreen
 │       │               └── SelectSaveGame (default)
 │       ├── Multiplayer
-│       │   └── MultiplayerSetup
+│       │   └── MultiplayerMenuScreen
 │       │       ├── Overview (default)
 │       │       ├── HostNewGame
 │       │       │   └── HostNewGameMenuScreen

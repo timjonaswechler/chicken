@@ -7,7 +7,7 @@ use {crate::states::menu::wiki::WikiMenuScreen, bevy::prelude::Event};
 #[derive(Event, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WikiMenuEvent {
     /// Navigate to a specific wiki screen or section.
-    Navigate(WikiMenuScreen),
+    To(WikiMenuScreen),
     /// Return to the main menu.
     Back,
 }

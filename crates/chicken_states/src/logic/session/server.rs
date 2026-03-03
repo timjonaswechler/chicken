@@ -606,6 +606,9 @@ mod tests {
                 let app_scope = app.world().resource::<State<AppScope>>();
                 assert_eq!(app_scope.get(), &AppScope::Splash);
 
+                app.world_mut().trigger(SetAppScope::To(AppScope::Menu));
+                update_app(&mut app, 1);
+
                 app.world_mut().trigger(SetAppScope::To(AppScope::Session));
                 update_app(&mut app, 1);
             }

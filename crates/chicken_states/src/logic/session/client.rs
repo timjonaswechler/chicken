@@ -1,15 +1,11 @@
 use {
     crate::{
-        events::{
-            menu::PauseMenuEvent,
-            session::{SetConnectingStep, SetDisconnectingStep, SetSyncingStep},
-        },
+        events::session::{SetConnectingStep, SetDisconnectingStep, SetPauseMenu, SetSyncingStep},
         states::{
             app::AppScope,
-            menu::PauseMenu,
             session::{
-                ClientConnectionStatus, ConnectingStep, DisconnectingStep, ServerShutdownStep,
-                ServerStatus, SessionState, SessionType, SyncingStep,
+                ClientConnectionStatus, ConnectingStep, DisconnectingStep, PauseMenu,
+                ServerShutdownStep, ServerStatus, SessionState, SessionType, SyncingStep,
             },
         },
     },
@@ -55,7 +51,7 @@ fn toggle_game_menu(
 }
 
 fn handle_pause_menu_nav(
-    trigger: On<PauseMenuEvent>,
+    trigger: On<SetPauseMenu>,
     mut next_pause_menu: ResMut<NextState<PauseMenu>>,
     mut next_session_state: ResMut<NextState<SessionState>>,
     session_type: Res<State<SessionType>>,
@@ -64,19 +60,19 @@ fn handle_pause_menu_nav(
     mut next_server_shutdown_step: ResMut<NextState<ServerShutdownStep>>,
 ) {
     match trigger.event() {
-        PauseMenuEvent::Resume => {
+        SetPauseMenu::Resume => {
             next_session_state.set(SessionState::Active);
         }
-        PauseMenuEvent::Settings => {
+        SetPauseMenu::Settings => {
             next_pause_menu.set(PauseMenu::Settings);
         }
-        PauseMenuEvent::Save => {
+        SetPauseMenu::Save => {
             next_pause_menu.set(PauseMenu::Save);
         }
-        PauseMenuEvent::Load => {
+        SetPauseMenu::Load => {
             next_pause_menu.set(PauseMenu::Load);
         }
-        PauseMenuEvent::Exit => match session_type.get() {
+        SetPauseMenu::Exit => match session_type.get() {
             SessionType::Singleplayer => {
                 next_server_status.set(ServerStatus::Stopping);
                 next_server_shutdown_step.set(ServerShutdownStep::SaveWorld);
@@ -84,9 +80,7 @@ fn handle_pause_menu_nav(
             SessionType::Client => {
                 next_client_status.set(ClientConnectionStatus::Disconnecting);
             }
-            SessionType::None => {}
-            #[cfg(feature = "headless")]
-            SessionType::DedicatedServer => {}
+            _ => {}
         },
     }
 }
@@ -1010,6 +1004,118 @@ mod tests {
             // Ready → Done ist gültig
             assert!(is_valid_disconnecting_step_transition(
                 &DisconnectingStep::Ready,
+                &SetDisconnectingStep::Done
+            ));
+        }
+
+        /// Test: Ungültige ClientConnectionStatus-Disconnecting-Übergänge werden blockiert.
+        #[test]
+        fn test_invalid_client_status_disconnecting_transitions() {
+            // Disconnected → Start ist ungültig (Client ist bereits getrennt)
+            assert!(!is_valid_client_status_disconnecting_transition(
+                &ClientConnectionStatus::Disconnected,
+                &SetDisconnectingStep::Start
+            ));
+
+            // Syncing → Start ist ungültig (Client synchronisiert gerade)
+            assert!(!is_valid_client_status_disconnecting_transition(
+                &ClientConnectionStatus::Syncing,
+                &SetDisconnectingStep::Start
+            ));
+
+            // Disconnecting → Start ist ungültig (Client trennt bereits)
+            assert!(!is_valid_client_status_disconnecting_transition(
+                &ClientConnectionStatus::Disconnecting,
+                &SetDisconnectingStep::Start
+            ));
+        }
+
+        /// Test: Ungültige ConnectingStep-Übergänge werden blockiert.
+        #[test]
+        fn test_invalid_connecting_step_transitions() {
+            // Ready → Next ist ungültig (Verbindung ist bereits bereit)
+            assert!(!is_valid_connecting_step_transition(
+                &ConnectingStep::Ready,
+                &SetConnectingStep::Next
+            ));
+
+            // ResolveAddress → Done ist ungültig (Noch nicht bereit)
+            assert!(!is_valid_connecting_step_transition(
+                &ConnectingStep::ResolveAddress,
+                &SetConnectingStep::Done
+            ));
+
+            // OpenSocket → Done ist ungültig (Noch nicht bereit)
+            assert!(!is_valid_connecting_step_transition(
+                &ConnectingStep::OpenSocket,
+                &SetConnectingStep::Done
+            ));
+
+            // SendHandshake → Done ist ungültig (Noch nicht bereit)
+            assert!(!is_valid_connecting_step_transition(
+                &ConnectingStep::SendHandshake,
+                &SetConnectingStep::Done
+            ));
+
+            // WaitForAccept → Done ist ungültig (Noch nicht bereit)
+            assert!(!is_valid_connecting_step_transition(
+                &ConnectingStep::WaitForAccept,
+                &SetConnectingStep::Done
+            ));
+        }
+
+        /// Test: Ungültige SyncingStep-Übergänge werden blockiert.
+        #[test]
+        fn test_invalid_syncing_step_transitions() {
+            // Ready → Next ist ungültig (Synchronisation ist bereits bereit)
+            assert!(!is_valid_syncing_step_transition(
+                &SyncingStep::Ready,
+                &SetSyncingStep::Next
+            ));
+
+            // RequestWorld → Done ist ungültig (Noch nicht bereit)
+            assert!(!is_valid_syncing_step_transition(
+                &SyncingStep::RequestWorld,
+                &SetSyncingStep::Done
+            ));
+
+            // ReceiveChunks → Done ist ungültig (Noch nicht bereit)
+            assert!(!is_valid_syncing_step_transition(
+                &SyncingStep::ReceiveChunks,
+                &SetSyncingStep::Done
+            ));
+
+            // SpawnEntities → Done ist ungültig (Noch nicht bereit)
+            assert!(!is_valid_syncing_step_transition(
+                &SyncingStep::SpawnEntities,
+                &SetSyncingStep::Done
+            ));
+        }
+
+        /// Test: Ungültige DisconnectingStep-Übergänge werden blockiert.
+        #[test]
+        fn test_invalid_disconnecting_step_transitions() {
+            // Ready → Next ist ungültig (Trennung ist bereits bereit)
+            assert!(!is_valid_disconnecting_step_transition(
+                &DisconnectingStep::Ready,
+                &SetDisconnectingStep::Next
+            ));
+
+            // SendDisconnect → Done ist ungültig (Noch nicht bereit)
+            assert!(!is_valid_disconnecting_step_transition(
+                &DisconnectingStep::SendDisconnect,
+                &SetDisconnectingStep::Done
+            ));
+
+            // WaitForAck → Done ist ungültig (Noch nicht bereit)
+            assert!(!is_valid_disconnecting_step_transition(
+                &DisconnectingStep::WaitForAck,
+                &SetDisconnectingStep::Done
+            ));
+
+            // Cleanup → Done ist ungültig (Noch nicht bereit)
+            assert!(!is_valid_disconnecting_step_transition(
+                &DisconnectingStep::Cleanup,
                 &SetDisconnectingStep::Done
             ));
         }

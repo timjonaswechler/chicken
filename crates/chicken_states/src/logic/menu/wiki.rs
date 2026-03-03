@@ -1,9 +1,9 @@
 use {
     crate::{
-        events::menu::{main::MainMenuInteraction, wiki::WikiMenuEvent},
-        states::menu::{main::MainMenuContext, wiki::WikiMenuScreen},
+        events::menu::{main::SetMainMenu, wiki::WikiMenuEvent},
+        states::menu::{main::MainMenuScreen, wiki::WikiMenuScreen},
     },
-    bevy::prelude::{App, AppExtStates, Commands, NextState, On, Plugin, ResMut},
+    bevy::prelude::{App, AppExtStates, Commands, NextState, On, Plugin, Res, ResMut, State, warn},
 };
 
 pub(super) struct WikiMenuPlugin;
@@ -17,17 +17,45 @@ impl Plugin for WikiMenuPlugin {
 
 // --- LOGIC HANDLERS ---
 
+/// Validates transitions for WikiMenuScreen.
+pub(crate) fn is_valid_wiki_screen_transition(_from: &WikiMenuScreen, _to: &WikiMenuEvent) -> bool {
+    // WikiMenuScreen currently only has Overview variant,
+    // so all transitions are valid. When more variants are added,
+    // validation logic should be implemented here.
+    true
+}
+
 fn handle_wiki_nav(
     trigger: On<WikiMenuEvent>,
+    current: Option<Res<State<WikiMenuScreen>>>,
     mut next_screen: ResMut<NextState<WikiMenuScreen>>,
     mut commands: Commands,
 ) {
+    // Get current state, default to Overview if not set
+    let current = match current {
+        Some(c) => *c.get(),
+        None => {
+            warn!("WikiMenuScreen does not exist - MainMenuScreen must be Wiki first");
+            return;
+        }
+    };
+
+    // Validate transition
+    if !is_valid_wiki_screen_transition(&current, trigger.event()) {
+        warn!(
+            "Invalid WikiMenuScreen transition: {:?} -> {:?}",
+            current,
+            trigger.event()
+        );
+        return;
+    }
+
     match trigger.event() {
-        WikiMenuEvent::Navigate(target) => {
+        WikiMenuEvent::To(target) => {
             next_screen.set(*target);
         }
         WikiMenuEvent::Back => {
-            commands.trigger(MainMenuInteraction::SwitchContext(MainMenuContext::Main));
+            commands.trigger(SetMainMenu::To(MainMenuScreen::Overview));
         }
     }
 }
@@ -46,14 +74,14 @@ mod tests {
     mod helpers {
         use crate::{
             ChickenStatePlugin,
-            events::{app::SetAppScope, menu::main::MainMenuInteraction},
+            events::{app::SetAppScope, menu::main::SetMainMenu},
             states::{
                 app::AppScope,
-                menu::{main::MainMenuContext, wiki::WikiMenuScreen},
+                menu::{main::MainMenuScreen, wiki::WikiMenuScreen},
                 session::SessionType,
             },
         };
-        use bevy::prelude::State;
+        use bevy::prelude::{NextState, State};
         use bevy::{prelude::*, state::app::StatesPlugin};
 
         /// Erstellt eine Test-App mit WikiMenuPlugin.
@@ -70,7 +98,7 @@ mod tests {
             }
         }
 
-        /// Setzt den MainMenuContext auf Wiki, damit WikiMenuScreen aktiv ist.
+        /// Setzt den MainMenuScreen auf Wiki, damit WikiMenuScreen aktiv ist.
         pub fn setup_wiki_context(app: &mut App) {
             #[cfg(feature = "hosted")]
             {
@@ -86,17 +114,17 @@ mod tests {
                 let menu_context = app.world().resource::<State<AppScope>>();
                 assert_eq!(menu_context, &AppScope::Menu);
 
-                let main_menu = app.world().resource::<State<MainMenuContext>>();
-                assert_eq!(main_menu.get(), &MainMenuContext::Main);
+                let main_menu = app.world().resource::<State<MainMenuScreen>>();
+                assert_eq!(main_menu.get(), &MainMenuScreen::Overview);
             }
 
-            // Initialisiere den MainMenuContext State
+            // Initialisiere den MainMenuScreen State
             app.world_mut()
-                .trigger(MainMenuInteraction::SwitchContext(MainMenuContext::Wiki));
+                .trigger(SetMainMenu::To(MainMenuScreen::Wiki));
             update_app(app, 1);
 
-            let main_context = app.world().resource::<State<MainMenuContext>>();
-            assert_eq!(main_context.get(), &MainMenuContext::Wiki);
+            let main_context = app.world().resource::<State<MainMenuScreen>>();
+            assert_eq!(main_context.get(), &MainMenuScreen::Wiki);
 
             // Verifiziere, dass WikiMenuScreen existiert und auf Overview ist
             let wiki_screen = app.world().resource::<State<WikiMenuScreen>>();
@@ -105,11 +133,58 @@ mod tests {
     }
 
     // =============================================================================
+    // TESTS FÜR VALIDATOR-FUNKTIONEN
+    // =============================================================================
+
+    mod validator_tests {
+        use crate::events::menu::wiki::WikiMenuEvent;
+        use crate::logic::menu::wiki::is_valid_wiki_screen_transition;
+        use crate::states::menu::wiki::WikiMenuScreen;
+
+        /// Test: Gültige WikiMenuScreen-Übergänge werden als gültig erkannt.
+        ///
+        /// Da WikiMenuScreen aktuell nur Overview hat, sind alle Übergänge gültig.
+        #[test]
+        fn test_valid_wiki_screen_transitions() {
+            // Overview → To(Overview) ist gültig
+            assert!(is_valid_wiki_screen_transition(
+                &WikiMenuScreen::Overview,
+                &WikiMenuEvent::To(WikiMenuScreen::Overview)
+            ));
+
+            // Overview → Back ist gültig
+            assert!(is_valid_wiki_screen_transition(
+                &WikiMenuScreen::Overview,
+                &WikiMenuEvent::Back
+            ));
+        }
+
+        /// Test: Alle Übergänge sind aktuell gültig (da nur Overview existiert).
+        ///
+        /// Dieser Test dokumentiert das aktuelle Verhalten.
+        /// Wenn weitere Varianten hinzugefügt werden, sollten hier
+        /// ungültige Übergänge getestet werden.
+        #[test]
+        fn test_no_invalid_transitions_yet() {
+            // Aktuell gibt es keine ungültigen Übergänge,
+            // da WikiMenuScreen nur Overview hat.
+            // Dieser Test wird failen, sobald Validierung implementiert wird.
+            assert!(is_valid_wiki_screen_transition(
+                &WikiMenuScreen::Overview,
+                &WikiMenuEvent::To(WikiMenuScreen::Overview)
+            ));
+        }
+    }
+
+    // =============================================================================
     // TESTS FÜR OBSERVER
     // =============================================================================
 
     mod observer_tests {
-        use crate::states::menu::main::MainMenuContext;
+        use crate::{
+            events::app::SetAppScope,
+            states::{app::AppScope, menu::main::MainMenuScreen},
+        };
 
         use super::*;
         use bevy::prelude::State;
@@ -129,7 +204,7 @@ mod tests {
 
             // Act: Sende Navigate Event zu Overview (zurück zu sich selbst)
             app.world_mut()
-                .trigger(WikiMenuEvent::Navigate(WikiMenuScreen::Overview));
+                .trigger(WikiMenuEvent::To(WikiMenuScreen::Overview));
             helpers::update_app(&mut app, 1);
 
             // Assert: State sollte immer noch Overview sein
@@ -137,22 +212,73 @@ mod tests {
             assert_eq!(new_screen.get(), &WikiMenuScreen::Overview);
         }
 
-        /// Test: Back-Event verursacht keinen Panic.
+        /// Test: Back-Event wechselt zurück zum Hauptmenü.
         ///
-        /// Das Back-Event ist aktuell ein Placeholder. Dieser Test stellt sicher,
-        /// dass das Event ohne Fehler verarbeitet wird.
+        /// Ein Back-Event sollte den MainMenuScreen zu Main ändern.
         #[test]
         fn test_navigate_back() {
             let mut app = helpers::test_app();
             helpers::setup_wiki_context(&mut app);
 
-            // Act: Sende Back Event - sollte nicht panic!
+            // Act: Sende Back Event
             app.world_mut().trigger(WikiMenuEvent::Back);
             helpers::update_app(&mut app, 1);
 
-            // Assert: State sollte unverändert sein
-            let current_screen = app.world().resource::<State<MainMenuContext>>();
-            assert_eq!(current_screen.get(), &MainMenuContext::Main);
+            // Assert: MainMenuScreen sollte zu Main gewechselt sein
+            let current_screen = app.world().resource::<State<MainMenuScreen>>();
+            assert_eq!(current_screen.get(), &MainMenuScreen::Overview);
+        }
+
+        /// Test: To-Event zu unterschiedlichem Screen ändert den State.
+        ///
+        /// Da WikiMenuScreen aktuell nur Overview hat, testen wir den
+        /// Übergang zu Overview (selber State).
+        #[test]
+        fn test_navigate_to_overview() {
+            let mut app = helpers::test_app();
+            helpers::setup_wiki_context(&mut app);
+
+            // Act: Sende To(Overview) Event
+            app.world_mut()
+                .trigger(WikiMenuEvent::To(WikiMenuScreen::Overview));
+            helpers::update_app(&mut app, 1);
+
+            // Assert: State sollte Overview sein
+            let current_screen = app.world().resource::<State<WikiMenuScreen>>();
+            assert_eq!(current_screen.get(), &WikiMenuScreen::Overview);
+        }
+
+        /// Test: Events werden ignoriert wenn WikiMenuScreen nicht existiert.
+        ///
+        /// Wenn MainMenuScreen nicht Wiki ist, sollte WikiMenuScreen
+        /// nicht existieren und Events sollten ignoriert werden.
+        #[test]
+        fn test_event_without_wiki_context_ignored() {
+            let mut app = helpers::test_app();
+            helpers::update_app(&mut app, 1);
+
+            // Setup: Gehe zu Menu, aber nicht zu Wiki
+            #[cfg(feature = "hosted")]
+            {
+                app.world_mut().trigger(SetAppScope::To(AppScope::Menu));
+                helpers::update_app(&mut app, 1);
+
+                // Verifiziere, dass wir im Menu sind (nicht Wiki)
+                let app_scope = app.world().resource::<State<AppScope>>();
+                assert_eq!(app_scope.get(), &AppScope::Menu);
+
+                let main_menu = app.world().resource::<State<MainMenuScreen>>();
+                assert_eq!(main_menu.get(), &MainMenuScreen::Overview);
+            }
+
+            // Act: Versuche Wiki-Event zu senden (sollte ignoriert werden)
+            app.world_mut()
+                .trigger(WikiMenuEvent::To(WikiMenuScreen::Overview));
+            helpers::update_app(&mut app, 1);
+
+            // Assert: MainMenuScreen sollte unverändert sein
+            let main_menu = app.world().resource::<State<MainMenuScreen>>();
+            assert_eq!(main_menu.get(), &MainMenuScreen::Overview);
         }
     }
 

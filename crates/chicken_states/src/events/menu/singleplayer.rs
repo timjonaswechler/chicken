@@ -1,4 +1,4 @@
-use {crate::states::menu::singleplayer::SingleplayerMenuScreen, bevy::prelude::Event};
+use bevy::prelude::Event;
 
 /// Events for navigating within the singleplayer setup menu.
 ///
@@ -6,8 +6,15 @@ use {crate::states::menu::singleplayer::SingleplayerMenuScreen, bevy::prelude::E
 /// to the main menu.
 #[derive(Event, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetSingleplayerMenu {
-    /// Navigate to a specific singleplayer setup screen (Overview, NewGame, LoadGame).
-    To(SingleplayerMenuScreen),
+    /// Navigate to the singleplayer overview screen.
+    Overview,
+
+    /// Navigate to the new game setup screen.
+    NewGame,
+
+    /// Navigate to the load game screen.
+    LoadGame,
+
     /// Return to the main menu.
     Back,
 }

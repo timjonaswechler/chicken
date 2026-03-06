@@ -1,4 +1,3 @@
-use crate::states::session::SessionType;
 use bevy::prelude::Event;
 
 /// Events for actions in the in-game pause menu.
@@ -19,11 +18,20 @@ pub enum SetPauseMenu {
     Exit,
 }
 
-#[derive(Event, Debug, Clone, Copy)]
 /// Events for controlling the session type.
+#[derive(Event, Debug, Clone, Copy)]
 pub enum SetSessionType {
-    /// Set the session type to the given value.
-    To(SessionType),
+    /// No active game session (main menu).
+    None,
+    /// Singleplayer or host session.
+    #[cfg(feature = "hosted")]
+    Singleplayer,
+    /// Client connection to a multiplayer session.
+    #[cfg(feature = "hosted")]
+    Client,
+    /// Dedicated server session (headless).
+    #[cfg(feature = "headless")]
+    DedicatedServer,
 }
 
 /// Events for controlling the server startup sequence.

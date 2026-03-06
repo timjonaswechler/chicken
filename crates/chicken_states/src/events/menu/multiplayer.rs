@@ -1,4 +1,4 @@
-use {crate::states::menu::multiplayer::MultiplayerMenuScreen, bevy::prelude::Event};
+use bevy::prelude::Event;
 
 /// Events for navigating within the multiplayer setup menu.
 ///
@@ -6,8 +6,14 @@ use {crate::states::menu::multiplayer::MultiplayerMenuScreen, bevy::prelude::Eve
 /// to the parent menu.
 #[derive(Event, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetMultiplayerMenu {
-    /// Navigate to a specific multiplayer setup screen (Overview, HostNewGame, HostSavedGame, JoinGame).
-    To(MultiplayerMenuScreen),
+    /// Navigate to the overview settings screen.
+    Overview,
+    /// Navigate to the host new game screen.
+    HostNewGame,
+    /// Navigate to the host saved game screen.
+    HostSavedGame,
+    /// Navigate to the join game screen.
+    JoinGame,
     /// Return to the previous menu level.
     Back,
 }

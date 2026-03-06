@@ -1,11 +1,9 @@
-pub mod main;
 pub mod multiplayer;
 pub mod settings;
 pub mod singleplayer;
 pub mod wiki;
 
 use bevy::prelude::{App, Plugin};
-use main::MainMenuPlugin;
 use multiplayer::MultiplayerMenuPlugin;
 use settings::SettingsMenuPlugin;
 use singleplayer::SingleplayerMenuPlugin;
@@ -20,7 +18,6 @@ impl Plugin for MenuPlugin {
             MultiplayerMenuPlugin,
             SettingsMenuPlugin,
             WikiMenuPlugin,
-            MainMenuPlugin,
         ));
     }
 }

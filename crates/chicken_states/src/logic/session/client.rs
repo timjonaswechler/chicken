@@ -523,8 +523,7 @@ mod tests {
             }
 
             {
-                app.world_mut()
-                    .trigger(SetSessionType::To(SessionType::Client));
+                app.world_mut().trigger(SetSessionType::Client);
                 update_app(&mut app, 1);
             }
 

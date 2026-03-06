@@ -548,14 +548,12 @@ mod tests {
     use crate::states::session::{ServerStatus, ServerVisibility};
 
     mod helpers {
-
+        #[cfg(feature = "hosted")]
+        use crate::events::app::SetAppScope;
         use crate::{
-            events::{
-                app::SetAppScope,
-                session::{
-                    SetGoingPrivateStep, SetGoingPublicStep, SetServerShutdownStep,
-                    SetServerStartupStep, SetSessionType,
-                },
+            events::session::{
+                SetGoingPrivateStep, SetGoingPublicStep, SetServerShutdownStep,
+                SetServerStartupStep, SetSessionType,
             },
             logic::{app::AppLogicPlugin, session::server::ServerSessionPlugin},
             states::{
@@ -571,7 +569,6 @@ mod tests {
 
         pub const STARTUP_STEPS: u8 = 3;
         pub const SHUTDOWN_STEPS: u8 = 5;
-
         pub const GOING_PUBLIC_STEPS: u8 = 3;
         pub const GOING_PRIVATE_STEPS: u8 = 4;
 
@@ -606,14 +603,12 @@ mod tests {
                 let app_scope = app.world().resource::<State<AppScope>>();
                 assert_eq!(app_scope.get(), &AppScope::Splash);
 
-                app.world_mut().trigger(SetAppScope::To(AppScope::Menu));
+                app.world_mut().trigger(SetAppScope::Menu);
                 update_app(&mut app, 1);
 
-                app.world_mut().trigger(SetAppScope::To(AppScope::Session));
+                app.world_mut().trigger(SetAppScope::Session);
                 update_app(&mut app, 1);
-            }
 
-            {
                 let app_scope = app.world().resource::<State<AppScope>>();
                 assert_eq!(app_scope.get(), &AppScope::Session);
 
@@ -621,13 +616,27 @@ mod tests {
                 assert_eq!(session_state.get(), &SessionState::Setup);
             }
 
-            {
-                app.world_mut().trigger(SetSessionType::To(session_type));
+            #[cfg(feature = "hosted")]
+            if session_type == SessionType::Singleplayer {
+                app.world_mut().trigger(SetSessionType::Singleplayer);
+                update_app(&mut app, 1);
+            }
+
+            #[cfg(feature = "hosted")]
+            if session_type == SessionType::Client {
+                app.world_mut().trigger(SetSessionType::Client);
+                update_app(&mut app, 1);
+            }
+
+            #[cfg(feature = "headless")]
+            if session_type == SessionType::DedicatedServer {
+                app.world_mut().trigger(SetSessionType::DedicatedServer);
                 update_app(&mut app, 1);
             }
 
             {
                 let session_type_state = app.world().resource::<State<SessionType>>();
+
                 assert_eq!(session_type_state.get(), &session_type);
 
                 let server_status = app.world().resource::<State<ServerStatus>>();

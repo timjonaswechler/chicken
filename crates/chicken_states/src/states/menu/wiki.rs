@@ -13,4 +13,10 @@ pub enum WikiMenuScreen {
     /// Main wiki overview with topic categories.
     #[default]
     Overview,
+    /// Creatures documentation section.
+    Creatures,
+    /// Weapons documentation section.
+    Weapons,
+    /// Armor documentation section.
+    Armor,
 }

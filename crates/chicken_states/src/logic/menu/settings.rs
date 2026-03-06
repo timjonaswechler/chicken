@@ -1,5 +1,8 @@
 use {
-    crate::{events::menu::settings::SetSettingsMenu, states::menu::settings::SettingsMenuScreen},
+    crate::{
+        events::menu::settings::SetSettingsMenu,
+        states::menu::{main::MainMenuScreen, settings::SettingsMenuScreen},
+    },
     bevy::prelude::{warn, App, AppExtStates, NextState, On, Plugin, Res, ResMut, State},
 };
 
@@ -8,60 +11,162 @@ pub(super) struct SettingsMenuPlugin;
 impl Plugin for SettingsMenuPlugin {
     fn build(&self, app: &mut App) {
         app.add_sub_state::<SettingsMenuScreen>()
-            .add_observer(handle_settings_nav);
+            .add_observer(on_set_settings_menu);
     }
 }
 
-// --- LOGIC HANDLERS ---
+// --- VALIDATOR FUNCTIONS ---
 
-/// Validates transitions for SettingsMenuScreen.
-pub(crate) fn is_valid_settings_screen_transition(
-    _from: &SettingsMenuScreen,
-    _to: &SetSettingsMenu,
+/// Validates transitions from MainMenuScreen to SettingsMenuScreen states.
+pub(crate) fn is_valid_main_menu_screen_settings_transition(
+    from: &MainMenuScreen,
+    to: &SetSettingsMenu,
 ) -> bool {
-    // All transitions between SettingsMenuScreen variants are valid.
-    // Apply, Back, and Cancel are always valid from any state.
-    true
+    match (from, to) {
+        // From Overview: can go to Settings (Overview event)
+        (MainMenuScreen::Overview, SetSettingsMenu::Overview) => true,
+        // From Settings: can navigate within SettingsMenu
+        (
+            MainMenuScreen::Settings,
+            SetSettingsMenu::Overview
+            | SetSettingsMenu::Audio
+            | SetSettingsMenu::Video
+            | SetSettingsMenu::Controls
+            | SetSettingsMenu::Back
+            | SetSettingsMenu::Apply
+            | SetSettingsMenu::Cancel,
+        ) => true,
+        _ => false,
+    }
 }
 
-fn handle_settings_nav(
-    trigger: On<SetSettingsMenu>,
-    current: Option<Res<State<SettingsMenuScreen>>>,
-    mut next_screen: ResMut<NextState<SettingsMenuScreen>>,
-) {
-    // Get current state
-    let current = match current {
-        Some(c) => *c.get(),
-        None => {
-            warn!("SettingsMenuScreen does not exist - MainMenuScreen must be Settings first");
-            return;
-        }
-    };
+/// Validates transitions between SettingsMenuScreen states.
+/// Navigation to other categories is only allowed from Overview.
+pub(crate) fn is_valid_settings_menu_screen_transition(
+    from: &SettingsMenuScreen,
+    to: &SetSettingsMenu,
+) -> bool {
+    match (from, to) {
+        // From Overview: can go to Audio, Video, Controls, Back, Apply, Cancel
+        (SettingsMenuScreen::Overview, SetSettingsMenu::Audio) => true,
+        (SettingsMenuScreen::Overview, SetSettingsMenu::Video) => true,
+        (SettingsMenuScreen::Overview, SetSettingsMenu::Controls) => true,
+        (SettingsMenuScreen::Overview, SetSettingsMenu::Back) => true,
+        (SettingsMenuScreen::Overview, SetSettingsMenu::Apply) => true,
+        (SettingsMenuScreen::Overview, SetSettingsMenu::Cancel) => true,
 
-    // Validate transition
-    if !is_valid_settings_screen_transition(&current, trigger.event()) {
+        // From Audio/Video/Controls: only Back, Apply, Cancel allowed
+        // Back goes to Overview, not directly to other categories
+        (SettingsMenuScreen::Audio, SetSettingsMenu::Back) => true,
+        (SettingsMenuScreen::Audio, SetSettingsMenu::Apply) => true,
+        (SettingsMenuScreen::Audio, SetSettingsMenu::Cancel) => true,
+
+        (SettingsMenuScreen::Video, SetSettingsMenu::Back) => true,
+        (SettingsMenuScreen::Video, SetSettingsMenu::Apply) => true,
+        (SettingsMenuScreen::Video, SetSettingsMenu::Cancel) => true,
+
+        (SettingsMenuScreen::Controls, SetSettingsMenu::Back) => true,
+        (SettingsMenuScreen::Controls, SetSettingsMenu::Apply) => true,
+        (SettingsMenuScreen::Controls, SetSettingsMenu::Cancel) => true,
+
+        // All other transitions are invalid
+        _ => false,
+    }
+}
+
+// --- OBSERVER FUNCTIONS ---
+
+/// Handles SetSettingsMenu events.
+/// Validates parent and sub-state transitions before applying state changes.
+fn on_set_settings_menu(
+    event: On<SetSettingsMenu>,
+    current_parent: Res<State<MainMenuScreen>>,
+    current: Option<Res<State<SettingsMenuScreen>>>,
+    mut next_main_screen: ResMut<NextState<MainMenuScreen>>,
+    mut next_settings_screen: ResMut<NextState<SettingsMenuScreen>>,
+) {
+    // Validate parent state transition
+    if !is_valid_main_menu_screen_settings_transition(current_parent.get(), event.event()) {
         warn!(
-            "Invalid SettingsMenuScreen transition: {:?} -> {:?}",
-            current,
-            trigger.event()
+            "Invalid MainMenuScreen transition for SetSettingsMenu: {:?} with parent {:?}",
+            event.event(),
+            current_parent.get()
         );
         return;
     }
 
-    match trigger.event() {
-        SetSettingsMenu::To(target) => {
-            next_screen.set(*target);
-        }
+    match *event.event() {
+        // Back: Return to MainMenuScreen::Overview (only valid from SettingsMenuScreen::Overview)
         SetSettingsMenu::Back => {
-            if current != SettingsMenuScreen::Overview {
-                next_screen.set(SettingsMenuScreen::Overview);
+            // Validate that we're in Overview substate
+            if let Some(ref current_state) = current {
+                if !is_valid_settings_menu_screen_transition(current_state.get(), event.event()) {
+                    warn!(
+                        "Invalid SettingsMenuScreen transition for Back: {:?} -> {:?}",
+                        current_state.get(),
+                        event.event()
+                    );
+                    return;
+                }
+            } else {
+                warn!("SettingsMenuScreen does not exist - cannot process Back event");
+                return;
+            }
+            next_main_screen.set(MainMenuScreen::Overview);
+        }
+        // Overview: Switch parent to Settings (substate is initialized automatically with default Overview)
+        SetSettingsMenu::Overview => {
+            next_main_screen.set(MainMenuScreen::Settings);
+        }
+        // Audio/Video/Controls: Set the substate (parent must already be Settings)
+        SetSettingsMenu::Audio | SetSettingsMenu::Video | SetSettingsMenu::Controls => {
+            // Validate substate transition if we have a current state
+            if let Some(ref current_state) = current {
+                if !is_valid_settings_menu_screen_transition(current_state.get(), event.event()) {
+                    warn!(
+                        "Invalid SettingsMenuScreen transition: {:?} -> {:?}",
+                        current_state.get(),
+                        event.event()
+                    );
+                    return;
+                }
+            }
+
+            match *event.event() {
+                SetSettingsMenu::Audio => next_settings_screen.set(SettingsMenuScreen::Audio),
+                SetSettingsMenu::Video => next_settings_screen.set(SettingsMenuScreen::Video),
+                SetSettingsMenu::Controls => next_settings_screen.set(SettingsMenuScreen::Controls),
+                _ => {}
             }
         }
-        SetSettingsMenu::Apply => {
-            // TODO: Apply settings logic
-        }
-        SetSettingsMenu::Cancel => {
-            next_screen.set(SettingsMenuScreen::Overview);
+        // Apply/Cancel: Handle actions with substate validation
+        SetSettingsMenu::Apply | SetSettingsMenu::Cancel => {
+            // Validate substate transition if we have a current state
+            if let Some(ref current_state) = current {
+                if !is_valid_settings_menu_screen_transition(current_state.get(), event.event()) {
+                    warn!(
+                        "Invalid SettingsMenuScreen transition: {:?} -> {:?}",
+                        current_state.get(),
+                        event.event()
+                    );
+                    return;
+                }
+            } else {
+                warn!("SettingsMenuScreen does not exist - cannot process Apply/Cancel event");
+                return;
+            }
+
+            match *event.event() {
+                SetSettingsMenu::Apply => {
+                    // TODO: Apply settings logic
+                    // For now, just stay in current state
+                }
+                SetSettingsMenu::Cancel => {
+                    // Cancel always goes back to Overview (not MainMenu!)
+                    next_settings_screen.set(SettingsMenuScreen::Overview);
+                }
+                _ => {}
+            }
         }
     }
 }
@@ -71,458 +176,702 @@ mod tests {
     //! Tests für die Settings Menu Logik.
     //!
     //! Diese Tests prüfen:
-    //! 1. Observer-Logik (ob SetSettingsMenus korrekt verarbeitet werden)
-    //! 2. State-Übergänge (ob SettingsMenuScreen korrekt gewechselt wird)
-    //! 3. Navigation zwischen Settings-Screens (Overview, Audio, Video, Controls)
+    //! 1. Validator-Funktionen (ob Übergänge gültig/ungültig sind)
+    //! 2. Observer-Logik (ob Events korrekt verarbeitet werden)
+    //! 3. Integration-Tests (komplette Workflows)
 
     use crate::events::menu::settings::SetSettingsMenu;
-
-    // =============================================================================
-    // TESTS FÜR VALIDATOR-FUNKTIONEN
-    // =============================================================================
+    use crate::states::menu::{main::MainMenuScreen, settings::SettingsMenuScreen};
 
     mod validator_tests {
-        use crate::events::menu::settings::SetSettingsMenu;
-        use crate::logic::menu::settings::is_valid_settings_screen_transition;
-        use crate::states::menu::settings::SettingsMenuScreen;
+        use super::*;
+        use crate::logic::menu::settings::{
+            is_valid_main_menu_screen_settings_transition, is_valid_settings_menu_screen_transition,
+        };
 
-        /// Test: Gültige SettingsMenuScreen-Übergänge werden als gültig erkannt.
-        ///
-        /// Alle Übergänge zwischen SettingsMenuScreen-Varianten sind gültig.
-        /// Apply, Back und Cancel sind von jedem State gültig.
+        /// Test: Gültige MainMenuScreen::Settings-Übergänge werden akzeptiert.
         #[test]
-        fn test_valid_settings_screen_transitions() {
-            // Overview → To(Audio) ist gültig
-            assert!(is_valid_settings_screen_transition(
-                &SettingsMenuScreen::Overview,
-                &SetSettingsMenu::To(SettingsMenuScreen::Audio)
+        fn test_valid_main_menu_screen_settings_transitions() {
+            // From Settings: all events are valid
+            assert!(is_valid_main_menu_screen_settings_transition(
+                &MainMenuScreen::Settings,
+                &SetSettingsMenu::Overview
             ));
-
-            // Audio → To(Video) ist gültig
-            assert!(is_valid_settings_screen_transition(
-                &SettingsMenuScreen::Audio,
-                &SetSettingsMenu::To(SettingsMenuScreen::Video)
+            assert!(is_valid_main_menu_screen_settings_transition(
+                &MainMenuScreen::Settings,
+                &SetSettingsMenu::Audio
             ));
-
-            // Video → Back ist gültig
-            assert!(is_valid_settings_screen_transition(
-                &SettingsMenuScreen::Video,
+            assert!(is_valid_main_menu_screen_settings_transition(
+                &MainMenuScreen::Settings,
+                &SetSettingsMenu::Video
+            ));
+            assert!(is_valid_main_menu_screen_settings_transition(
+                &MainMenuScreen::Settings,
+                &SetSettingsMenu::Controls
+            ));
+            assert!(is_valid_main_menu_screen_settings_transition(
+                &MainMenuScreen::Settings,
                 &SetSettingsMenu::Back
             ));
+            assert!(is_valid_main_menu_screen_settings_transition(
+                &MainMenuScreen::Settings,
+                &SetSettingsMenu::Apply
+            ));
+            assert!(is_valid_main_menu_screen_settings_transition(
+                &MainMenuScreen::Settings,
+                &SetSettingsMenu::Cancel
+            ));
+        }
 
-            // Controls → Cancel ist gültig
-            assert!(is_valid_settings_screen_transition(
-                &SettingsMenuScreen::Controls,
+        /// Test: Valid transition from MainMenuScreen::Overview to Settings.
+        #[test]
+        fn test_valid_main_menu_overview_to_settings_transition() {
+            // Overview -> Overview (switches parent to Settings, substate initialized automatically)
+            assert!(is_valid_main_menu_screen_settings_transition(
+                &MainMenuScreen::Overview,
+                &SetSettingsMenu::Overview
+            ));
+        }
+
+        /// Test: Ungültige MainMenuScreen-Übergänge werden blockiert.
+        #[test]
+        fn test_invalid_main_menu_screen_settings_transitions() {
+            // Overview -> Audio/Video/Controls/Back/Apply/Cancel is invalid (must go to Overview first to switch parent)
+            assert!(!is_valid_main_menu_screen_settings_transition(
+                &MainMenuScreen::Overview,
+                &SetSettingsMenu::Audio
+            ));
+            assert!(!is_valid_main_menu_screen_settings_transition(
+                &MainMenuScreen::Overview,
+                &SetSettingsMenu::Video
+            ));
+            assert!(!is_valid_main_menu_screen_settings_transition(
+                &MainMenuScreen::Overview,
+                &SetSettingsMenu::Controls
+            ));
+            assert!(!is_valid_main_menu_screen_settings_transition(
+                &MainMenuScreen::Overview,
+                &SetSettingsMenu::Back
+            ));
+            assert!(!is_valid_main_menu_screen_settings_transition(
+                &MainMenuScreen::Overview,
+                &SetSettingsMenu::Apply
+            ));
+            assert!(!is_valid_main_menu_screen_settings_transition(
+                &MainMenuScreen::Overview,
                 &SetSettingsMenu::Cancel
             ));
 
-            // Overview → Apply ist gültig
-            assert!(is_valid_settings_screen_transition(
-                &SettingsMenuScreen::Overview,
+            // Singleplayer -> Any SetSettingsMenu event is invalid
+            assert!(!is_valid_main_menu_screen_settings_transition(
+                &MainMenuScreen::Singleplayer,
+                &SetSettingsMenu::Overview
+            ));
+            assert!(!is_valid_main_menu_screen_settings_transition(
+                &MainMenuScreen::Singleplayer,
+                &SetSettingsMenu::Audio
+            ));
+
+            // Multiplayer -> Any SetSettingsMenu event is invalid
+            assert!(!is_valid_main_menu_screen_settings_transition(
+                &MainMenuScreen::Multiplayer,
+                &SetSettingsMenu::Overview
+            ));
+            assert!(!is_valid_main_menu_screen_settings_transition(
+                &MainMenuScreen::Multiplayer,
+                &SetSettingsMenu::Back
+            ));
+
+            // Wiki -> Any SetSettingsMenu event is invalid
+            assert!(!is_valid_main_menu_screen_settings_transition(
+                &MainMenuScreen::Wiki,
+                &SetSettingsMenu::Overview
+            ));
+            assert!(!is_valid_main_menu_screen_settings_transition(
+                &MainMenuScreen::Wiki,
                 &SetSettingsMenu::Apply
             ));
         }
 
-        /// Test: Alle Übergänge zwischen allen SettingsMenuScreen-Varianten sind gültig.
-        ///
-        /// Dieser Test prüft alle Kombinationen.
+        /// Test: Gültige SettingsMenuScreen-Übergänge von Overview.
         #[test]
-        fn test_all_screen_transitions_valid() {
-            let screens = [
-                SettingsMenuScreen::Overview,
+        fn test_valid_settings_transitions_from_overview() {
+            // From Overview: can go to Audio, Video, Controls, Back, Apply, Cancel
+            assert!(is_valid_settings_menu_screen_transition(
+                &SettingsMenuScreen::Overview,
+                &SetSettingsMenu::Audio
+            ));
+            assert!(is_valid_settings_menu_screen_transition(
+                &SettingsMenuScreen::Overview,
+                &SetSettingsMenu::Video
+            ));
+            assert!(is_valid_settings_menu_screen_transition(
+                &SettingsMenuScreen::Overview,
+                &SetSettingsMenu::Controls
+            ));
+            assert!(is_valid_settings_menu_screen_transition(
+                &SettingsMenuScreen::Overview,
+                &SetSettingsMenu::Back
+            ));
+            assert!(is_valid_settings_menu_screen_transition(
+                &SettingsMenuScreen::Overview,
+                &SetSettingsMenu::Apply
+            ));
+            assert!(is_valid_settings_menu_screen_transition(
+                &SettingsMenuScreen::Overview,
+                &SetSettingsMenu::Cancel
+            ));
+        }
+
+        /// Test: Ungültige direkte Übergänge zwischen Kategorien.
+        #[test]
+        fn test_invalid_direct_category_transitions() {
+            // From Audio: cannot go directly to Video or Controls
+            assert!(!is_valid_settings_menu_screen_transition(
+                &SettingsMenuScreen::Audio,
+                &SetSettingsMenu::Video
+            ));
+            assert!(!is_valid_settings_menu_screen_transition(
+                &SettingsMenuScreen::Audio,
+                &SetSettingsMenu::Controls
+            ));
+            assert!(!is_valid_settings_menu_screen_transition(
+                &SettingsMenuScreen::Audio,
+                &SetSettingsMenu::Overview
+            ));
+
+            // From Video: cannot go directly to Audio or Controls
+            assert!(!is_valid_settings_menu_screen_transition(
+                &SettingsMenuScreen::Video,
+                &SetSettingsMenu::Audio
+            ));
+            assert!(!is_valid_settings_menu_screen_transition(
+                &SettingsMenuScreen::Video,
+                &SetSettingsMenu::Controls
+            ));
+            assert!(!is_valid_settings_menu_screen_transition(
+                &SettingsMenuScreen::Video,
+                &SetSettingsMenu::Overview
+            ));
+
+            // From Controls: cannot go directly to Audio or Video
+            assert!(!is_valid_settings_menu_screen_transition(
+                &SettingsMenuScreen::Controls,
+                &SetSettingsMenu::Audio
+            ));
+            assert!(!is_valid_settings_menu_screen_transition(
+                &SettingsMenuScreen::Controls,
+                &SetSettingsMenu::Video
+            ));
+            assert!(!is_valid_settings_menu_screen_transition(
+                &SettingsMenuScreen::Controls,
+                &SetSettingsMenu::Overview
+            ));
+        }
+
+        /// Test: Gültige Übergänge von Audio/Video/Controls.
+        #[test]
+        fn test_valid_transitions_from_categories() {
+            // From Audio/Video/Controls: only Back, Apply, Cancel allowed
+            let categories = [
                 SettingsMenuScreen::Audio,
                 SettingsMenuScreen::Video,
                 SettingsMenuScreen::Controls,
             ];
 
-            for from in &screens {
-                for to in &screens {
-                    assert!(
-                        is_valid_settings_screen_transition(from, &SetSettingsMenu::To(*to)),
-                        "Transition from {:?} to {:?} should be valid",
-                        from,
-                        to
-                    );
-                }
-            }
-        }
-
-        /// Test: Apply, Back und Cancel sind von jedem Screen gültig.
-        #[test]
-        fn test_all_actions_valid_from_all_screens() {
-            let screens = [
-                SettingsMenuScreen::Overview,
-                SettingsMenuScreen::Audio,
-                SettingsMenuScreen::Video,
-                SettingsMenuScreen::Controls,
-            ];
-
-            for screen in &screens {
+            for category in &categories {
                 assert!(
-                    is_valid_settings_screen_transition(screen, &SetSettingsMenu::Apply),
-                    "Apply from {:?} should be valid",
-                    screen
+                    is_valid_settings_menu_screen_transition(category, &SetSettingsMenu::Back),
+                    "Back should be valid from {:?}",
+                    category
                 );
                 assert!(
-                    is_valid_settings_screen_transition(screen, &SetSettingsMenu::Back),
-                    "Back from {:?} should be valid",
-                    screen
+                    is_valid_settings_menu_screen_transition(category, &SetSettingsMenu::Apply),
+                    "Apply should be valid from {:?}",
+                    category
                 );
                 assert!(
-                    is_valid_settings_screen_transition(screen, &SetSettingsMenu::Cancel),
-                    "Cancel from {:?} should be valid",
-                    screen
+                    is_valid_settings_menu_screen_transition(category, &SetSettingsMenu::Cancel),
+                    "Cancel should be valid from {:?}",
+                    category
                 );
             }
         }
     }
-
-    mod helpers {
-        use crate::{
-            events::{app::SetAppScope, menu::main::SetMainMenu},
-            logic::{app::AppLogicPlugin, menu::MenuPlugin},
-            states::{
-                app::AppScope,
-                menu::{main::MainMenuScreen, settings::SettingsMenuScreen},
-                session::SessionType,
-            },
-        };
-        use bevy::{prelude::*, state::app::StatesPlugin};
-
-        /// Erstellt eine Test-App mit SettingsMenuPlugin und AppLogicPlugin.
-        ///
-        /// AppLogicPlugin ist notwendig, um die Messaging-Infrastruktur zu initialisieren,
-        /// die für State-Transitions benötigt wird.
-        pub fn test_app() -> App {
-            let mut app = App::new();
-            app.add_plugins((MinimalPlugins, StatesPlugin, AppLogicPlugin, MenuPlugin));
-            app
-        }
-
-        /// Führt den App-Update für die angegebene Anzahl von Ticks aus.
-        pub fn update_app(app: &mut App, i: u8) {
-            for _ in 0..i {
-                app.update();
-            }
-        }
-
-        /// Setzt die App in den Settings-Context.
-        ///
-        /// Diese Funktion nutzt insert_state, um direkt den MainMenuScreen::Settings zu setzen,
-        /// ohne die Event-Transition-Machinerie zu verwenden (vermeidet Messaging-Probleme).
-        pub fn setup_settings_app() -> App {
-            let mut app = test_app();
-            update_app(&mut app, 1);
-
-            let session_type_state = app.world().resource::<State<SessionType>>();
-            assert_eq!(session_type_state.get(), &SessionType::None);
-
-            let app_scope = app.world().resource::<State<AppScope>>();
-            assert_eq!(app_scope.get(), &AppScope::Splash);
-
-            app.world_mut().trigger(SetAppScope::To(AppScope::Menu));
-            update_app(&mut app, 1);
-
-            // Verifiziere, dass wir im Menu sind
-            let app_scope = app.world().resource::<State<AppScope>>();
-            assert_eq!(app_scope.get(), &AppScope::Menu);
-
-            // Verifiziere, dass MainMenuScreen existiert und auf Main steht
-            let menu_context = app.world().resource::<State<MainMenuScreen>>();
-            assert_eq!(menu_context.get(), &MainMenuScreen::Overview);
-
-            app.world_mut()
-                .trigger(SetMainMenu::To(MainMenuScreen::Settings));
-            update_app(&mut app, 1);
-
-            // Verifiziere, dass wir im Settings sind
-            let menu_context = app.world().resource::<State<MainMenuScreen>>();
-            assert_eq!(menu_context.get(), &MainMenuScreen::Settings);
-
-            // Verifiziere, dass SettingsMenuScreen existiert und auf Overview steht
-            let settings_screen = app.world().resource::<State<SettingsMenuScreen>>();
-            assert_eq!(settings_screen.get(), &SettingsMenuScreen::Overview);
-
-            app
-        }
-    }
-
-    // =============================================================================
-    // TESTS FÜR SETTINGS MENU NAVIGATION OBSERVER
-    // =============================================================================
 
     mod observer_tests {
         use super::*;
-        use crate::states::menu::settings::SettingsMenuScreen;
-        use bevy::prelude::*;
 
-        /// Test: Navigate-Event ändert den SettingsMenuScreen.
-        ///
-        /// Ein Navigate-Event mit Audio sollte den Screen zu
-        /// SettingsMenuScreen::Audio ändern.
-        #[test]
-        fn test_navigate_changes_screen() {
-            let mut app = helpers::setup_settings_app();
+        pub mod helpers {
+            use crate::{
+                events::{app::SetAppScope, menu::settings::SetSettingsMenu},
+                states::{
+                    app::AppScope,
+                    menu::{main::MainMenuScreen, settings::SettingsMenuScreen},
+                },
+                ChickenStatePlugin,
+            };
+            use bevy::{prelude::*, state::app::StatesPlugin};
 
-            // Trigger Navigate::Audio
-            app.world_mut()
-                .trigger(SetSettingsMenu::To(SettingsMenuScreen::Audio));
-            helpers::update_app(&mut app, 1);
+            /// Creates a test app with all required plugins.
+            pub fn test_app() -> App {
+                let mut app = App::new();
+                app.add_plugins((MinimalPlugins, StatesPlugin, ChickenStatePlugin));
+                app
+            }
 
-            // Verifiziere State-Änderung
-            let settings_screen = app.world().resource::<State<SettingsMenuScreen>>();
-            assert_eq!(settings_screen.get(), &SettingsMenuScreen::Audio);
+            /// Runs the app for a specified number of update ticks.
+            pub fn update_app(app: &mut App, ticks: u8) {
+                for _ in 0..ticks {
+                    app.update();
+                }
+            }
+
+            /// Setup helper: Sets MainMenuScreen to Settings and SettingsMenuScreen to Overview.
+            pub fn setup_test_app_in_settings_overview() -> App {
+                let mut app = test_app();
+                update_app(&mut app, 1);
+
+                // Verify initial state
+                let app_scope = app.world().resource::<State<AppScope>>();
+                assert_eq!(app_scope.get(), &AppScope::Splash);
+
+                // Transition to Menu
+                app.world_mut().trigger(SetAppScope::Menu);
+                update_app(&mut app, 1);
+
+                // Verify we're in MainMenu::Overview
+                let menu_state = app.world().resource::<State<MainMenuScreen>>();
+                assert_eq!(menu_state.get(), &MainMenuScreen::Overview);
+
+                // Navigate to Settings
+                app.world_mut().trigger(SetSettingsMenu::Overview);
+                update_app(&mut app, 1);
+
+                // Verify we're in Settings
+                let menu_state = app.world().resource::<State<MainMenuScreen>>();
+                assert_eq!(menu_state.get(), &MainMenuScreen::Settings);
+
+                // Verify we're in SettingsMenuScreen::Overview
+                let settings_state = app.world().resource::<State<SettingsMenuScreen>>();
+                assert_eq!(settings_state.get(), &SettingsMenuScreen::Overview);
+
+                app
+            }
+
+            /// Setup helper: Sets SettingsMenuScreen to Audio.
+            pub fn setup_test_app_in_audio() -> App {
+                let mut app = setup_test_app_in_settings_overview();
+
+                // Navigate to Audio
+                app.world_mut().trigger(SetSettingsMenu::Audio);
+                update_app(&mut app, 1);
+
+                let settings_state = app.world().resource::<State<SettingsMenuScreen>>();
+                assert_eq!(settings_state.get(), &SettingsMenuScreen::Audio);
+
+                app
+            }
+
+            /// Setup helper: Sets SettingsMenuScreen to Video.
+            pub fn setup_test_app_in_video() -> App {
+                let mut app = setup_test_app_in_settings_overview();
+
+                // Navigate to Video
+                app.world_mut().trigger(SetSettingsMenu::Video);
+                update_app(&mut app, 1);
+
+                let settings_state = app.world().resource::<State<SettingsMenuScreen>>();
+                assert_eq!(settings_state.get(), &SettingsMenuScreen::Video);
+
+                app
+            }
+
+            /// Setup helper: Sets SettingsMenuScreen to Controls.
+            pub fn setup_test_app_in_controls() -> App {
+                let mut app = setup_test_app_in_settings_overview();
+
+                // Navigate to Controls
+                app.world_mut().trigger(SetSettingsMenu::Controls);
+                update_app(&mut app, 1);
+
+                let settings_state = app.world().resource::<State<SettingsMenuScreen>>();
+                assert_eq!(settings_state.get(), &SettingsMenuScreen::Controls);
+
+                app
+            }
+
+            /// Asserts that SettingsMenuScreen state matches expected value.
+            pub fn assert_settings_screen(app: &mut App, expected: SettingsMenuScreen) {
+                let settings_state = app.world().resource::<State<SettingsMenuScreen>>();
+                assert_eq!(settings_state.get(), &expected);
+            }
+
+            /// Asserts that MainMenuScreen state matches expected value.
+            pub fn assert_main_menu_screen(app: &mut App, expected: MainMenuScreen) {
+                let menu_state = app.world().resource::<State<MainMenuScreen>>();
+                assert_eq!(menu_state.get(), &expected);
+            }
         }
 
-        /// Test: Back-Event von einem Nicht-Overview-Screen kehrt zu Overview zurück.
-        ///
-        /// Wenn der aktuelle Screen nicht Overview ist, sollte Back zu Overview wechseln.
+        /// Test: Overview -> Audio transition works.
         #[test]
-        fn test_back_from_non_overview_returns_overview() {
-            let mut app = helpers::setup_settings_app();
+        fn test_observer_overview_to_audio() {
+            let mut app = helpers::setup_test_app_in_settings_overview();
 
-            // Zuerst zu Video navigieren
-            app.world_mut()
-                .trigger(SetSettingsMenu::To(SettingsMenuScreen::Video));
+            app.world_mut().trigger(SetSettingsMenu::Audio);
             helpers::update_app(&mut app, 1);
 
-            let settings_screen = app.world().resource::<State<SettingsMenuScreen>>();
-            assert_eq!(settings_screen.get(), &SettingsMenuScreen::Video);
+            helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Audio);
+        }
 
-            // Trigger Back
+        /// Test: Overview -> Video transition works.
+        #[test]
+        fn test_observer_overview_to_video() {
+            let mut app = helpers::setup_test_app_in_settings_overview();
+
+            app.world_mut().trigger(SetSettingsMenu::Video);
+            helpers::update_app(&mut app, 1);
+
+            helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Video);
+        }
+
+        /// Test: Overview -> Controls transition works.
+        #[test]
+        fn test_observer_overview_to_controls() {
+            let mut app = helpers::setup_test_app_in_settings_overview();
+
+            app.world_mut().trigger(SetSettingsMenu::Controls);
+            helpers::update_app(&mut app, 1);
+
+            helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Controls);
+        }
+
+        /// Test: Audio -> Back -> Main Menu transition works.
+        #[test]
+        fn test_observer_audio_back_to_main_menu() {
+            let mut app = helpers::setup_test_app_in_audio();
+
             app.world_mut().trigger(SetSettingsMenu::Back);
             helpers::update_app(&mut app, 1);
 
-            // Verifiziere, dass wir zurück zu Overview sind
-            let settings_screen = app.world().resource::<State<SettingsMenuScreen>>();
-            assert_eq!(settings_screen.get(), &SettingsMenuScreen::Overview);
+            helpers::assert_main_menu_screen(&mut app, MainMenuScreen::Overview);
         }
 
-        /// Test: Back-Event von Overview bleibt auf Overview.
-        ///
-        /// Wenn der aktuelle Screen bereits Overview ist, sollte Back keine Änderung bewirken.
+        /// Test: Video -> Back -> Main Menu transition works.
         #[test]
-        fn test_back_from_overview_stays_overview() {
-            let mut app = helpers::setup_settings_app();
+        fn test_observer_video_back_to_main_menu() {
+            let mut app = helpers::setup_test_app_in_video();
 
-            // Verifiziere, dass wir auf Overview sind
-            let settings_screen = app.world().resource::<State<SettingsMenuScreen>>();
-            assert_eq!(settings_screen.get(), &SettingsMenuScreen::Overview);
-
-            // Trigger Back
             app.world_mut().trigger(SetSettingsMenu::Back);
             helpers::update_app(&mut app, 1);
 
-            // Verifiziere, dass wir immer noch auf Overview sind
-            let settings_screen = app.world().resource::<State<SettingsMenuScreen>>();
-            assert_eq!(settings_screen.get(), &SettingsMenuScreen::Overview);
+            helpers::assert_main_menu_screen(&mut app, MainMenuScreen::Overview);
         }
 
-        /// Test: Cancel-Event kehrt immer zu Overview zurück.
-        ///
-        /// Cancel sollte unabhängig vom aktuellen Screen zu Overview wechseln.
+        /// Test: Controls -> Back -> Main Menu transition works.
         #[test]
-        fn test_cancel_returns_overview() {
-            let mut app = helpers::setup_settings_app();
+        fn test_observer_controls_back_to_main_menu() {
+            let mut app = helpers::setup_test_app_in_controls();
 
-            // Zuerst zu Controls navigieren
-            app.world_mut()
-                .trigger(SetSettingsMenu::To(SettingsMenuScreen::Controls));
+            app.world_mut().trigger(SetSettingsMenu::Back);
             helpers::update_app(&mut app, 1);
 
-            let settings_screen = app.world().resource::<State<SettingsMenuScreen>>();
-            assert_eq!(settings_screen.get(), &SettingsMenuScreen::Controls);
-
-            // Trigger Cancel
-            app.world_mut().trigger(SetSettingsMenu::Cancel);
-            helpers::update_app(&mut app, 1);
-
-            // Verifiziere, dass wir zurück zu Overview sind
-            let settings_screen = app.world().resource::<State<SettingsMenuScreen>>();
-            assert_eq!(settings_screen.get(), &SettingsMenuScreen::Overview);
+            helpers::assert_main_menu_screen(&mut app, MainMenuScreen::Overview);
         }
 
-        /// Test: Apply-Event (aktuell Placeholder) verändert den State nicht.
-        ///
-        /// Der Apply-Event hat aktuell noch keine Implementierung (TODO).
-        /// Dieser Test verifiziert das aktuelle Verhalten und sollte aktualisiert werden,
-        /// wenn die Apply-Logik implementiert wird.
+        /// Test: Overview -> Back -> MainMenu transition works.
         #[test]
-        fn test_apply_placeholder() {
-            let mut app = helpers::setup_settings_app();
+        fn test_observer_overview_back_to_main_menu() {
+            let mut app = helpers::setup_test_app_in_settings_overview();
 
-            // Zuerst zu Audio navigieren
-            app.world_mut()
-                .trigger(SetSettingsMenu::To(SettingsMenuScreen::Audio));
+            app.world_mut().trigger(SetSettingsMenu::Back);
             helpers::update_app(&mut app, 1);
 
-            let settings_screen = app.world().resource::<State<SettingsMenuScreen>>();
-            assert_eq!(settings_screen.get(), &SettingsMenuScreen::Audio);
+            helpers::assert_main_menu_screen(&mut app, MainMenuScreen::Overview);
+        }
 
-            // Trigger Apply (aktuell Placeholder)
+        /// Test: Invalid direct category navigation is blocked (Audio -> Video).
+        #[test]
+        fn test_observer_invalid_category_switch_blocked() {
+            let mut app = helpers::setup_test_app_in_audio();
+
+            // Try to go directly from Audio to Video (should be ignored)
+            app.world_mut().trigger(SetSettingsMenu::Video);
+            helpers::update_app(&mut app, 1);
+
+            // Should still be in Audio
+            helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Audio);
+        }
+
+        /// Test: Apply event works from Audio state.
+        #[test]
+        fn test_observer_apply_from_audio() {
+            let mut app = helpers::setup_test_app_in_audio();
+
+            // Apply should stay in current state (currently a no-op)
             app.world_mut().trigger(SetSettingsMenu::Apply);
             helpers::update_app(&mut app, 1);
 
-            // Verifiziere, dass der State unverändert ist (aktueller Placeholder-Verhalten)
-            // TODO: Diese Assertion sollte aktualisiert werden, wenn Apply-Logik implementiert wird
-            let settings_screen = app.world().resource::<State<SettingsMenuScreen>>();
-            assert_eq!(settings_screen.get(), &SettingsMenuScreen::Audio);
+            // Should still be in Audio (Apply is a no-op)
+            helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Audio);
+        }
+
+        /// Test: Cancel from Video returns to Overview.
+        #[test]
+        fn test_observer_cancel_returns_to_overview() {
+            let mut app = helpers::setup_test_app_in_video();
+
+            app.world_mut().trigger(SetSettingsMenu::Cancel);
+            helpers::update_app(&mut app, 1);
+
+            // Cancel always returns to Overview
+            helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Overview);
+        }
+
+        /// Test: Apply event works from Video state.
+        #[test]
+        fn test_observer_apply_from_video() {
+            let mut app = helpers::setup_test_app_in_video();
+
+            app.world_mut().trigger(SetSettingsMenu::Apply);
+            helpers::update_app(&mut app, 1);
+
+            // Should still be in Video
+            helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Video);
+        }
+
+        /// Test: Apply event works from Controls state.
+        #[test]
+        fn test_observer_apply_from_controls() {
+            let mut app = helpers::setup_test_app_in_controls();
+
+            app.world_mut().trigger(SetSettingsMenu::Apply);
+            helpers::update_app(&mut app, 1);
+
+            // Should still be in Controls
+            helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Controls);
+        }
+
+        /// Test: Cancel from Controls returns to Overview.
+        #[test]
+        fn test_observer_cancel_from_controls() {
+            let mut app = helpers::setup_test_app_in_controls();
+
+            app.world_mut().trigger(SetSettingsMenu::Cancel);
+            helpers::update_app(&mut app, 1);
+
+            helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Overview);
+        }
+
+        /// Test: Cancel from Audio returns to Overview.
+        #[test]
+        fn test_observer_cancel_from_audio() {
+            let mut app = helpers::setup_test_app_in_audio();
+
+            app.world_mut().trigger(SetSettingsMenu::Cancel);
+            helpers::update_app(&mut app, 1);
+
+            helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Overview);
+        }
+
+        /// Test: Apply from Overview works (stays in Overview).
+        #[test]
+        fn test_observer_apply_from_overview() {
+            let mut app = helpers::setup_test_app_in_settings_overview();
+
+            app.world_mut().trigger(SetSettingsMenu::Apply);
+            helpers::update_app(&mut app, 1);
+
+            // Should stay in Overview
+            helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Overview);
+        }
+
+        /// Test: Observer ignores invalid events with warning.
+        #[test]
+        fn test_observer_ignores_invalid_events() {
+            let mut app = helpers::setup_test_app_in_audio();
+
+            // Try to go directly to Overview from Audio (should be ignored)
+            app.world_mut().trigger(SetSettingsMenu::Overview);
+            helpers::update_app(&mut app, 1);
+
+            // Should still be in Audio
+            helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Audio);
         }
     }
 
-    // =============================================================================
-    // TESTS FÜR STATE TRANSITIONS
-    // =============================================================================
-
-    mod state_transition_tests {
+    mod integration_tests {
         use super::*;
-        use crate::states::menu::settings::SettingsMenuScreen;
-        use bevy::prelude::*;
 
-        /// Test: Navigation von Overview zu allen Settings-Screens.
-        ///
-        /// Testet, dass von Overview zu Audio, Video und Controls navigiert werden kann.
+        mod helpers {
+            pub use super::super::observer_tests::helpers::*;
+        }
+
+        /// Test: Overview -> Audio -> Back -> Overview.
         #[test]
-        fn test_overview_to_all_screens() {
-            let targets = [
-                SettingsMenuScreen::Audio,
-                SettingsMenuScreen::Video,
-                SettingsMenuScreen::Controls,
-            ];
+        fn test_overview_to_audio_and_back() {
+            let mut app = helpers::setup_test_app_in_settings_overview();
 
-            for target in targets {
-                let mut app = helpers::setup_settings_app();
+            // Navigate to Audio
+            app.world_mut().trigger(SetSettingsMenu::Audio);
+            helpers::update_app(&mut app, 1);
+            helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Audio);
 
-                // Verifiziere Start-Status
-                let settings_screen = app.world().resource::<State<SettingsMenuScreen>>();
-                assert_eq!(settings_screen.get(), &SettingsMenuScreen::Overview);
+            // Go back to Overview
+            app.world_mut().trigger(SetSettingsMenu::Back);
+            helpers::update_app(&mut app, 1);
+            helpers::assert_main_menu_screen(&mut app, MainMenuScreen::Overview);
+        }
 
-                // Navigiere zum Target
-                app.world_mut().trigger(SetSettingsMenu::To(target));
+        /// Test: Overview -> Video -> Cancel -> Overview.
+        #[test]
+        fn test_overview_to_video_and_cancel() {
+            let mut app = helpers::setup_test_app_in_settings_overview();
+
+            // Navigate to Video
+            app.world_mut().trigger(SetSettingsMenu::Video);
+            helpers::update_app(&mut app, 1);
+            helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Video);
+
+            // Cancel should return to Overview
+            app.world_mut().trigger(SetSettingsMenu::Cancel);
+            helpers::update_app(&mut app, 1);
+            helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Overview);
+        }
+
+        /// Test: Back from Overview goes to MainMenu.
+        #[test]
+        fn test_back_from_overview_goes_to_main_menu() {
+            let mut app = helpers::setup_test_app_in_settings_overview();
+
+            // Back from Overview should go to MainMenu
+            app.world_mut().trigger(SetSettingsMenu::Back);
+            helpers::update_app(&mut app, 1);
+            helpers::assert_main_menu_screen(&mut app, MainMenuScreen::Overview);
+        }
+
+        /// Test: Apply works from all states (Audio, Video, Controls).
+        #[test]
+        fn test_apply_from_all_states() {
+            // Test Apply from Audio
+            {
+                let mut app = helpers::setup_test_app_in_audio();
+                app.world_mut().trigger(SetSettingsMenu::Apply);
                 helpers::update_app(&mut app, 1);
+                helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Audio);
+            }
 
-                // Verifiziere State-Änderung
-                let settings_screen = app.world().resource::<State<SettingsMenuScreen>>();
-                assert_eq!(
-                    settings_screen.get(),
-                    &target,
-                    "Failed to navigate from Overview to {:?}",
-                    target
-                );
+            // Test Apply from Video
+            {
+                let mut app = helpers::setup_test_app_in_video();
+                app.world_mut().trigger(SetSettingsMenu::Apply);
+                helpers::update_app(&mut app, 1);
+                helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Video);
+            }
+
+            // Test Apply from Controls
+            {
+                let mut app = helpers::setup_test_app_in_controls();
+                app.world_mut().trigger(SetSettingsMenu::Apply);
+                helpers::update_app(&mut app, 1);
+                helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Controls);
+            }
+
+            // Test Apply from Overview
+            {
+                let mut app = helpers::setup_test_app_in_settings_overview();
+                app.world_mut().trigger(SetSettingsMenu::Apply);
+                helpers::update_app(&mut app, 1);
+                helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Overview);
             }
         }
 
-        /// Test: Navigation zwischen allen Settings-Screens.
-        ///
-        /// Testet direkte Übergänge zwischen allen Screen-Kombinationen.
+        /// Test: Complete settings workflow - Overview -> Audio -> Apply -> Back -> Overview -> Video -> Back -> MainMenu.
         #[test]
-        fn test_navigation_between_all_screens() {
-            let screens = [
-                SettingsMenuScreen::Overview,
-                SettingsMenuScreen::Audio,
-                SettingsMenuScreen::Video,
-                SettingsMenuScreen::Controls,
-            ];
+        fn test_complete_settings_workflow() {
+            let mut app = helpers::setup_test_app_in_settings_overview();
 
-            for from in screens {
-                for to in screens {
-                    let mut app = helpers::setup_settings_app();
+            // 1. Navigate to Audio
+            app.world_mut().trigger(SetSettingsMenu::Audio);
+            helpers::update_app(&mut app, 1);
+            helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Audio);
 
-                    // Zuerst zu 'from' navigieren
-                    if from != SettingsMenuScreen::Overview {
-                        app.world_mut().trigger(SetSettingsMenu::To(from));
-                        helpers::update_app(&mut app, 1);
-                    }
+            // 2. Apply (stays in Audio)
+            app.world_mut().trigger(SetSettingsMenu::Apply);
+            helpers::update_app(&mut app, 1);
+            helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Audio);
 
-                    // Dann zu 'to' navigieren
-                    app.world_mut().trigger(SetSettingsMenu::To(to));
-                    helpers::update_app(&mut app, 1);
+            // 3. Back to Overview (must go back first before navigating to another category)
+            app.world_mut().trigger(SetSettingsMenu::Back);
+            helpers::update_app(&mut app, 1);
+            helpers::assert_main_menu_screen(&mut app, MainMenuScreen::Overview);
 
-                    // Verifiziere finalen State
-                    let settings_screen = app.world().resource::<State<SettingsMenuScreen>>();
-                    assert_eq!(
-                        settings_screen.get(),
-                        &to,
-                        "Failed to navigate from {:?} to {:?}",
-                        from,
-                        to
-                    );
-                }
-            }
+            // 4. Navigate to Settings again
+            app.world_mut().trigger(SetSettingsMenu::Overview);
+            helpers::update_app(&mut app, 1);
+            helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Overview);
+
+            // 5. Navigate to Video
+            app.world_mut().trigger(SetSettingsMenu::Video);
+            helpers::update_app(&mut app, 1);
+            helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Video);
+
+            // 6. Back to MainMenu
+            app.world_mut().trigger(SetSettingsMenu::Back);
+            helpers::update_app(&mut app, 1);
+            helpers::assert_main_menu_screen(&mut app, MainMenuScreen::Overview);
         }
 
-        /// Test: Back-Navigation von allen Non-Overview-Screens.
-        ///
-        /// Testet, dass Back von Audio, Video und Controls zu Overview führt.
+        /// Test: Invalid direct navigation between categories is blocked.
         #[test]
-        fn test_back_from_all_non_overview_screens() {
-            let non_overview_screens = [
-                SettingsMenuScreen::Audio,
-                SettingsMenuScreen::Video,
-                SettingsMenuScreen::Controls,
-            ];
-
-            for screen in non_overview_screens {
-                let mut app = helpers::setup_settings_app();
-
-                // Navigiere zum Screen
-                app.world_mut().trigger(SetSettingsMenu::To(screen));
+        fn test_invalid_direct_navigation_blocked() {
+            // Test: Audio -> Video (should be blocked)
+            {
+                let mut app = helpers::setup_test_app_in_audio();
+                app.world_mut().trigger(SetSettingsMenu::Video);
                 helpers::update_app(&mut app, 1);
-
-                let settings_screen = app.world().resource::<State<SettingsMenuScreen>>();
-                assert_eq!(settings_screen.get(), &screen);
-
-                // Trigger Back
-                app.world_mut().trigger(SetSettingsMenu::Back);
-                helpers::update_app(&mut app, 1);
-
-                // Verifiziere Rückkehr zu Overview
-                let settings_screen = app.world().resource::<State<SettingsMenuScreen>>();
-                assert_eq!(
-                    settings_screen.get(),
-                    &SettingsMenuScreen::Overview,
-                    "Back from {:?} should return to Overview",
-                    screen
-                );
+                helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Audio);
             }
-        }
 
-        /// Test: Cancel von allen Settings-Screens kehrt zu Overview zurück.
-        ///
-        /// Testet, dass Cancel von jedem Screen zu Overview führt.
-        #[test]
-        fn test_cancel_from_all_screens() {
-            let screens = [
-                SettingsMenuScreen::Overview,
-                SettingsMenuScreen::Audio,
-                SettingsMenuScreen::Video,
-                SettingsMenuScreen::Controls,
-            ];
-
-            for screen in screens {
-                let mut app = helpers::setup_settings_app();
-
-                // Navigiere zum Screen (falls nicht Overview)
-                if screen != SettingsMenuScreen::Overview {
-                    app.world_mut().trigger(SetSettingsMenu::To(screen));
-                    helpers::update_app(&mut app, 1);
-                }
-
-                let settings_screen = app.world().resource::<State<SettingsMenuScreen>>();
-                assert_eq!(settings_screen.get(), &screen);
-
-                // Trigger Cancel
-                app.world_mut().trigger(SetSettingsMenu::Cancel);
+            // Test: Audio -> Controls (should be blocked)
+            {
+                let mut app = helpers::setup_test_app_in_audio();
+                app.world_mut().trigger(SetSettingsMenu::Controls);
                 helpers::update_app(&mut app, 1);
+                helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Audio);
+            }
 
-                // Verifiziere Rückkehr zu Overview
-                let settings_screen = app.world().resource::<State<SettingsMenuScreen>>();
-                assert_eq!(
-                    settings_screen.get(),
-                    &SettingsMenuScreen::Overview,
-                    "Cancel from {:?} should return to Overview",
-                    screen
-                );
+            // Test: Video -> Controls (should be blocked)
+            {
+                let mut app = helpers::setup_test_app_in_video();
+                app.world_mut().trigger(SetSettingsMenu::Controls);
+                helpers::update_app(&mut app, 1);
+                helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Video);
+            }
+
+            // Test: Video -> Audio (should be blocked)
+            {
+                let mut app = helpers::setup_test_app_in_video();
+                app.world_mut().trigger(SetSettingsMenu::Audio);
+                helpers::update_app(&mut app, 1);
+                helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Video);
+            }
+
+            // Test: Controls -> Audio (should be blocked)
+            {
+                let mut app = helpers::setup_test_app_in_controls();
+                app.world_mut().trigger(SetSettingsMenu::Audio);
+                helpers::update_app(&mut app, 1);
+                helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Controls);
+            }
+
+            // Test: Controls -> Video (should be blocked)
+            {
+                let mut app = helpers::setup_test_app_in_controls();
+                app.world_mut().trigger(SetSettingsMenu::Video);
+                helpers::update_app(&mut app, 1);
+                helpers::assert_settings_screen(&mut app, SettingsMenuScreen::Controls);
             }
         }
     }

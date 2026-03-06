@@ -204,7 +204,7 @@ mod tests {
             states::app::AppScope,
             states::session::{SessionState, SessionType},
         };
-        use bevy::{input::InputPlugin, prelude::*, state::app::StatesPlugin};
+        use bevy::{prelude::*, state::app::StatesPlugin};
 
         #[cfg(feature = "hosted")]
         use crate::states::menu::main::MainMenuScreen;

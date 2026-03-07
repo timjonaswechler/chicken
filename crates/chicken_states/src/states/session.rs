@@ -7,6 +7,7 @@ use {
 #[derive(States, Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Reflect)]
 pub enum SessionType {
     /// This is active if there is no active game running, for example when the game is in the main menu.
+    #[cfg(feature = "hosted")]
     #[default]
     None,
 
@@ -20,6 +21,7 @@ pub enum SessionType {
 
     /// DedicatedServer is active when running as a dedicated server without a local client.
     #[cfg(feature = "headless")]
+    #[default]
     DedicatedServer,
 }
 

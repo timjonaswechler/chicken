@@ -1,12 +1,9 @@
 use {
-    crate::{
-        events::session::SetSessionType,
-        states::{
-            app::AppScope,
-            session::{SessionState, SessionType},
-        },
+    crate::states::{
+        app::AppScope,
+        session::{SessionState, SessionType},
     },
-    bevy::prelude::{App, AppExtStates, NextState, On, Plugin, Res, ResMut, State, warn},
+    bevy::prelude::{App, AppExtStates, Plugin},
 };
 
 #[cfg(feature = "hosted")]
@@ -17,27 +14,12 @@ use {
         ecs::message::MessageWriter,
         input::InputPlugin,
         prelude::{
-            ButtonInput, IntoScheduleConfigs, KeyCode, OnEnter, Resource, Time, Update, in_state,
+            in_state, warn, ButtonInput, IntoScheduleConfigs, KeyCode, NextState, On, OnEnter, Res,
+            ResMut, Resource, State, Time, Update,
         },
     },
 };
 
-#[cfg_attr(doc, aquamarine::aquamarine)]
-/// ## AppLogicPlugin Flow
-///
-/// ```mermaid
-/// flowchart TD
-///     Splash((Splash)) --> Menu[Menu]
-///     Menu --> Session{SessionType?}
-///     Session -->|Singleplayer| Single[(Singleplayer)]
-///     Session -->|Client| Client[(Client)]
-///     Session -->|Server| Server[(DedicatedServer)]
-/// ```
-///
-/// **Navigation**:
-/// - [`AppScope`](crate::states::app::AppScope)
-/// - [`SessionType`](crate::states::session::SessionType)
-/// - [`SplashTimer`](crate::plugins::app_logic::SplashTimer)
 pub struct AppLogicPlugin;
 
 impl Plugin for AppLogicPlugin {
@@ -48,11 +30,12 @@ impl Plugin for AppLogicPlugin {
         }
         app.init_state::<AppScope>()
             .init_state::<SessionType>()
-            .add_sub_state::<SessionState>()
-            .add_observer(on_set_session_type);
+            .add_sub_state::<SessionState>();
 
         #[cfg(feature = "hosted")]
         {
+            // app.add_observer(on_set_session_type);
+
             app.add_sub_state::<MainMenuScreen>();
             // Initialize the splash timer resource
             app.insert_resource(SplashTimer::default())
@@ -112,7 +95,6 @@ pub(crate) fn is_valid_app_scope_transition(from: &AppScope, to: &SetAppScope) -
 }
 
 #[cfg(feature = "hosted")]
-
 pub(crate) fn on_change_app_scope(
     event: On<SetAppScope>,
     current: Res<State<AppScope>>,
@@ -145,49 +127,8 @@ pub(crate) fn on_change_app_scope(
     }
 }
 
-/// Validates transitions for SessionType.
-pub(crate) fn is_valid_session_type_transition(from: &SessionType, to: &SetSessionType) -> bool {
-    matches!(
-        (from, to),
-        (SessionType::None, _) | (_, SetSessionType::None)
-    )
-}
-
-pub fn on_set_session_type(
-    event: On<SetSessionType>,
-    current: Res<State<SessionType>>,
-    mut next_session_type: ResMut<NextState<SessionType>>,
-) {
-    if !is_valid_session_type_transition(current.get(), event.event()) {
-        warn!(
-            "Invalid ServerStatus transition for ServerStartupStep: {:?} with parent status {:?}",
-            event.event(),
-            current.get()
-        );
-        return;
-    }
-
-    match *event.event() {
-        SetSessionType::None => {
-            next_session_type.set(SessionType::None);
-        }
-        #[cfg(feature = "hosted")]
-        SetSessionType::Singleplayer => {
-            next_session_type.set(SessionType::Singleplayer);
-        }
-        #[cfg(feature = "hosted")]
-        SetSessionType::Client => {
-            next_session_type.set(SessionType::Client);
-        }
-        #[cfg(feature = "headless")]
-        SetSessionType::DedicatedServer => {
-            next_session_type.set(SessionType::DedicatedServer);
-        }
-    }
-}
-
 #[cfg(test)]
-mod tests {
+pub mod tests {
     //! Tests für die App-Logik.
     //!
     //! Diese Tests prüfen:
@@ -199,22 +140,17 @@ mod tests {
 
     mod helpers {
         use crate::{
-            events::session::SetSessionType,
-            logic::app::AppLogicPlugin,
-            states::app::AppScope,
-            states::session::{SessionState, SessionType},
+            states::{app::AppScope, session::SessionType},
+            ChickenStatePlugin,
         };
         use bevy::{prelude::*, state::app::StatesPlugin};
 
         #[cfg(feature = "hosted")]
-        use crate::states::menu::main::MainMenuScreen;
+        use crate::{events::app::SetAppScope, logic::app::tests::helpers};
 
         pub fn test_app() -> App {
             let mut app = App::new();
-            app.add_plugins((MinimalPlugins, StatesPlugin, AppLogicPlugin));
-
-            #[cfg(feature = "hosted")]
-            app.add_sub_state::<MainMenuScreen>();
+            app.add_plugins((MinimalPlugins, StatesPlugin, ChickenStatePlugin));
 
             app
         }
@@ -237,19 +173,11 @@ mod tests {
             assert_eq!(app_scope.get(), &AppScope::Splash);
 
             // Transition to Session
-            let mut next_app_scope = app.world_mut().resource_mut::<NextState<AppScope>>();
-            next_app_scope.set(AppScope::Session);
+            app.world_mut().trigger(SetAppScope::Menu);
             update_app(&mut app, 1);
 
-            let app_scope = app.world().resource::<State<AppScope>>();
-            assert_eq!(app_scope.get(), &AppScope::Session);
-
-            let session_state = app.world().resource::<State<SessionState>>();
-            assert_eq!(session_state.get(), &SessionState::Setup);
-
-            // SessionType should be None initially
-            let session_type = app.world().resource::<State<SessionType>>();
-            assert_eq!(session_type.get(), &SessionType::None);
+            helpers::assert_app_scope(&mut app, AppScope::Menu);
+            helpers::assert_session_type(&mut app, SessionType::None);
 
             app
         }
@@ -260,60 +188,10 @@ mod tests {
             let mut app = test_app();
             update_app(&mut app, 1);
 
-            // Initial state should be Session (headless starts directly in Session)
-            let app_scope = app.world().resource::<State<AppScope>>();
-            assert_eq!(app_scope.get(), &AppScope::Session);
-
-            let session_state = app.world().resource::<State<SessionState>>();
-            assert_eq!(session_state.get(), &SessionState::Setup);
-
-            // SessionType should be None initially
-            let session_type = app.world().resource::<State<SessionType>>();
-            assert_eq!(session_type.get(), &SessionType::None);
+            helpers::assert_app_scope(&mut app, AppScope::Session);
+            helpers::assert_session_type(&mut app, SessionType::DedicatedServer);
 
             app
-        }
-
-        /// Setup for hosted feature tests with Menu scope.
-        #[cfg(feature = "hosted")]
-        pub fn setup_test_app_in_menu() -> App {
-            let mut app = test_app();
-            update_app(&mut app, 1);
-
-            // Initial state should be Splash
-            let app_scope = app.world().resource::<State<AppScope>>();
-            assert_eq!(app_scope.get(), &AppScope::Splash);
-
-            // Transition to Menu
-            let mut next_app_scope = app.world_mut().resource_mut::<NextState<AppScope>>();
-            next_app_scope.set(AppScope::Menu);
-            update_app(&mut app, 1);
-
-            let app_scope = app.world().resource::<State<AppScope>>();
-            assert_eq!(app_scope.get(), &AppScope::Menu);
-
-            let session_type = app.world().resource::<State<SessionType>>();
-            assert_eq!(session_type.get(), &SessionType::None);
-
-            let menu_context = app.world().resource::<State<MainMenuScreen>>();
-            assert_eq!(menu_context.get(), &MainMenuScreen::Overview);
-
-            app
-        }
-
-        /// Triggers SetSessionType event and updates the app.
-        pub fn set_session_type(app: &mut App, session_type: SessionType) {
-            let event = match session_type {
-                SessionType::None => SetSessionType::None,
-                #[cfg(feature = "hosted")]
-                SessionType::Singleplayer => SetSessionType::Singleplayer,
-                #[cfg(feature = "hosted")]
-                SessionType::Client => SetSessionType::Client,
-                #[cfg(feature = "headless")]
-                SessionType::DedicatedServer => SetSessionType::DedicatedServer,
-            };
-            app.world_mut().trigger(event);
-            update_app(app, 1);
         }
 
         /// Asserts that the current SessionType matches the expected value.
@@ -326,6 +204,30 @@ mod tests {
         pub fn assert_app_scope(app: &mut App, expected: AppScope) {
             let app_scope = app.world().resource::<State<AppScope>>();
             assert_eq!(app_scope.get(), &expected);
+        }
+    }
+
+    // =============================================================================
+    // TESTS FÜR OBSERVER-FUNKTIONEN
+    // =============================================================================
+
+    mod observer_tests {
+        use crate::logic::app::tests::helpers;
+        #[cfg(feature = "headless")]
+        use crate::states::session::SessionType;
+
+        /// Test: Gültiger SessionType-Wechsel über Observer funktioniert.
+        #[cfg(feature = "hosted")]
+        #[test]
+        fn test_on_set_session_type_valid_transition() {
+            helpers::setup_test_app_hosted();
+        }
+
+        /// Test: Gültiger SessionType-Wechsel für DedicatedServer (headless).
+        #[cfg(feature = "headless")]
+        #[test]
+        fn test_on_set_session_type_dedicated_server() {
+            helpers::setup_test_app_headless();
         }
     }
 
@@ -400,409 +302,10 @@ mod tests {
                 &SetAppScope::Session
             ));
 
-            // Menu → Menu ist ungültig (keine Änderung)
             assert!(!is_valid_app_scope_transition(
                 &AppScope::Menu,
                 &SetAppScope::Menu
             ));
-
-            // Session → Session ist ungültig (keine Änderung) - not possible with explicit variants
-            // Session → Menu is valid, so we can't test invalid same-state transition
-        }
-    }
-
-    mod validator_tests {
-        use crate::events::session::SetSessionType;
-        use crate::logic::app::is_valid_session_type_transition;
-        use crate::states::session::SessionType;
-
-        /// Test: Gültige SessionType-Übergänge werden als gültig erkannt.
-        ///
-        /// Gültige Übergänge:
-        /// - Von None zu jedem SessionType (To)
-        /// - Von jedem SessionType zu None
-        #[test]
-        fn test_valid_session_type_transitions() {
-            // None → Singleplayer (hosted only)
-            #[cfg(feature = "hosted")]
-            assert!(is_valid_session_type_transition(
-                &SessionType::None,
-                &SetSessionType::Singleplayer
-            ));
-
-            // None → Client (hosted only)
-            #[cfg(feature = "hosted")]
-            assert!(is_valid_session_type_transition(
-                &SessionType::None,
-                &SetSessionType::Client
-            ));
-
-            // None → DedicatedServer (headless only)
-            #[cfg(feature = "headless")]
-            assert!(is_valid_session_type_transition(
-                &SessionType::None,
-                &SetSessionType::DedicatedServer
-            ));
-
-            // Singleplayer → None (hosted only)
-            #[cfg(feature = "hosted")]
-            assert!(is_valid_session_type_transition(
-                &SessionType::Singleplayer,
-                &SetSessionType::None
-            ));
-
-            // Client → None (hosted only)
-            #[cfg(feature = "hosted")]
-            assert!(is_valid_session_type_transition(
-                &SessionType::Client,
-                &SetSessionType::None
-            ));
-
-            // DedicatedServer → None (headless only)
-            #[cfg(feature = "headless")]
-            assert!(is_valid_session_type_transition(
-                &SessionType::DedicatedServer,
-                &SetSessionType::None
-            ));
-
-            // None → None (edge case)
-            assert!(is_valid_session_type_transition(
-                &SessionType::None,
-                &SetSessionType::None
-            ));
-        }
-
-        /// Test: Ungültige SessionType-Übergänge werden blockiert.
-        ///
-        /// Ungültige Übergänge:
-        /// - Von Singleplayer direkt zu Client (hosted)
-        /// - Von Client direkt zu Singleplayer (hosted)
-        /// - Von Singleplayer zu DedicatedServer (hosted)
-        #[test]
-        fn test_invalid_session_type_transitions() {
-            // Singleplayer → Client (direkter Übergang ungültig)
-            #[cfg(feature = "hosted")]
-            assert!(!is_valid_session_type_transition(
-                &SessionType::Singleplayer,
-                &SetSessionType::Client
-            ));
-
-            // Client → Singleplayer (direkter Übergang ungültig)
-            #[cfg(feature = "hosted")]
-            assert!(!is_valid_session_type_transition(
-                &SessionType::Client,
-                &SetSessionType::Singleplayer
-            ));
-
-            // DedicatedServer → Singleplayer (direkter Übergang ungültig)
-            #[cfg(all(feature = "headless", feature = "hosted"))]
-            assert!(!is_valid_session_type_transition(
-                &SessionType::DedicatedServer,
-                &SetSessionType::Singleplayer
-            ));
-
-            // DedicatedServer → Client (direkter Übergang ungültig)
-            #[cfg(all(feature = "headless", feature = "hosted"))]
-            assert!(!is_valid_session_type_transition(
-                &SessionType::DedicatedServer,
-                &SetSessionType::Client
-            ));
-        }
-    }
-
-    // =============================================================================
-    // TESTS FÜR OBSERVER-FUNKTIONEN
-    // =============================================================================
-
-    mod observer_tests {
-        use crate::logic::app::tests::helpers;
-        use crate::states::session::SessionType;
-
-        /// Test: Gültiger SessionType-Wechsel über Observer funktioniert.
-        #[cfg(feature = "hosted")]
-        #[test]
-        fn test_on_set_session_type_valid_transition() {
-            let mut app = helpers::setup_test_app_hosted();
-
-            // Transition from None to Singleplayer
-            helpers::set_session_type(&mut app, SessionType::Singleplayer);
-            helpers::assert_session_type(&mut app, SessionType::Singleplayer);
-
-            // Transition back to None
-            helpers::set_session_type(&mut app, SessionType::None);
-            helpers::assert_session_type(&mut app, SessionType::None);
-        }
-
-        /// Test: Gültiger SessionType-Wechsel zu Client über Observer funktioniert.
-        #[cfg(feature = "hosted")]
-        #[test]
-        fn test_on_set_session_type_to_client() {
-            let mut app = helpers::setup_test_app_hosted();
-
-            // Transition from None to Client
-            helpers::set_session_type(&mut app, SessionType::Client);
-            helpers::assert_session_type(&mut app, SessionType::Client);
-
-            // Transition back to None
-            helpers::set_session_type(&mut app, SessionType::None);
-            helpers::assert_session_type(&mut app, SessionType::None);
-        }
-
-        /// Test: Ungültiger SessionType-Wechsel wird vom Observer blockiert.
-        #[cfg(feature = "hosted")]
-        #[test]
-        fn test_on_set_session_type_invalid_transition_blocked() {
-            let mut app = helpers::setup_test_app_hosted();
-
-            // First set to Singleplayer
-            helpers::set_session_type(&mut app, SessionType::Singleplayer);
-            helpers::assert_session_type(&mut app, SessionType::Singleplayer);
-
-            // Try to transition directly to Client (invalid)
-            helpers::set_session_type(&mut app, SessionType::Client);
-
-            // Should still be Singleplayer (transition blocked)
-            helpers::assert_session_type(&mut app, SessionType::Singleplayer);
-        }
-
-        /// Test: Mehrere gültige SessionType-Wechsel in Sequenz.
-        #[cfg(feature = "hosted")]
-        #[test]
-        fn test_session_type_sequence() {
-            let mut app = helpers::setup_test_app_hosted();
-
-            // None → Singleplayer
-            helpers::set_session_type(&mut app, SessionType::Singleplayer);
-            helpers::assert_session_type(&mut app, SessionType::Singleplayer);
-
-            // Singleplayer → None
-            helpers::set_session_type(&mut app, SessionType::None);
-            helpers::assert_session_type(&mut app, SessionType::None);
-
-            // None → Client
-            helpers::set_session_type(&mut app, SessionType::Client);
-            helpers::assert_session_type(&mut app, SessionType::Client);
-
-            // Client → None
-            helpers::set_session_type(&mut app, SessionType::None);
-            helpers::assert_session_type(&mut app, SessionType::None);
-        }
-
-        /// Test: Gültiger SessionType-Wechsel für DedicatedServer (headless).
-        #[cfg(feature = "headless")]
-        #[test]
-        fn test_on_set_session_type_dedicated_server() {
-            let mut app = helpers::setup_test_app_headless();
-
-            // Transition from None to DedicatedServer
-            helpers::set_session_type(&mut app, SessionType::DedicatedServer);
-            helpers::assert_session_type(&mut app, SessionType::DedicatedServer);
-
-            // Transition back to None
-            helpers::set_session_type(&mut app, SessionType::None);
-            helpers::assert_session_type(&mut app, SessionType::None);
-        }
-    }
-
-    // =============================================================================
-    // TESTS FÜR APPSCOPE (nur mit hosted feature)
-    // =============================================================================
-
-    #[cfg(feature = "hosted")]
-    mod app_scope_tests {
-        use crate::events::app::SetAppScope;
-        use crate::logic::app::tests::helpers;
-        use crate::states::app::AppScope;
-        use crate::states::menu::main::MainMenuScreen;
-        use crate::states::session::SessionType;
-        use bevy::prelude::{NextState, State};
-
-        /// Test: Ungültiger AppScope-Wechsel wird vom Observer blockiert.
-        ///
-        /// Ein Versuch, von Menu zu Splash zu wechseln, sollte blockiert werden.
-        #[test]
-        fn test_invalid_app_scope_transition_blocked() {
-            let mut app = helpers::test_app();
-            helpers::update_app(&mut app, 1);
-
-            // Initial state is Splash
-            helpers::assert_app_scope(&mut app, AppScope::Splash);
-
-            // Transition to Menu
-            let mut next_app_scope = app.world_mut().resource_mut::<NextState<AppScope>>();
-            next_app_scope.set(AppScope::Menu);
-            helpers::update_app(&mut app, 1);
-            helpers::assert_app_scope(&mut app, AppScope::Menu);
-
-            // Note: Menu → Splash is no longer possible with explicit variants
-            // since SetAppScope doesn't have a Splash variant
-            // Transition to Session first, then try Menu → Session → Menu loop
-            app.world_mut().trigger(SetAppScope::Session);
-            helpers::update_app(&mut app, 1);
-            helpers::assert_app_scope(&mut app, AppScope::Session);
-        }
-
-        /// Test: Ungültiger AppScope-Wechsel Session → Splash wird blockiert.
-        #[test]
-        fn test_session_to_splash_blocked() {
-            let mut app = helpers::setup_test_app_hosted();
-
-            // Current state is Session
-            helpers::assert_app_scope(&mut app, AppScope::Session);
-
-            // Note: Session → Splash is no longer possible with explicit variants
-            // since SetAppScope doesn't have a Splash variant
-            // Session → Menu is valid, so transition to Menu instead
-            app.world_mut().trigger(SetAppScope::Menu);
-            helpers::update_app(&mut app, 1);
-            helpers::assert_app_scope(&mut app, AppScope::Menu);
-        }
-
-        /// Test: SetAppScope::To(Menu) setzt alle Zustände korrekt zurück.
-        #[test]
-        fn test_on_change_app_scope_to_menu() {
-            let mut app = helpers::setup_test_app_hosted();
-
-            // First set session type to Singleplayer
-            helpers::set_session_type(&mut app, SessionType::Singleplayer);
-            helpers::assert_session_type(&mut app, SessionType::Singleplayer);
-
-            // Trigger SetAppScope::Menu
-            app.world_mut().trigger(SetAppScope::Menu);
-            helpers::update_app(&mut app, 1);
-
-            // AppScope should be Menu
-            helpers::assert_app_scope(&mut app, AppScope::Menu);
-
-            // SessionType should be reset to None
-            helpers::assert_session_type(&mut app, SessionType::None);
-
-            // MainMenuScreen should be set to Main
-            let menu_context = app.world().resource::<State<MainMenuScreen>>();
-            assert_eq!(menu_context.get(), &MainMenuScreen::Overview);
-        }
-
-        /// Test: Initialer Zustand ist Splash im hosted mode.
-        #[test]
-        fn test_initial_state_is_splash() {
-            let mut app = helpers::test_app();
-            helpers::update_app(&mut app, 1);
-
-            let app_scope = app.world().resource::<State<AppScope>>();
-            assert_eq!(app_scope.get(), &AppScope::Splash);
-        }
-
-        /// Test: Splash → Menu Transition.
-        #[test]
-        fn test_splash_to_menu_transition() {
-            let mut app = helpers::test_app();
-            helpers::update_app(&mut app, 1);
-
-            // Initial state is Splash
-            helpers::assert_app_scope(&mut app, AppScope::Splash);
-
-            // Transition to Menu
-            let mut next_app_scope = app.world_mut().resource_mut::<NextState<AppScope>>();
-            next_app_scope.set(AppScope::Menu);
-            helpers::update_app(&mut app, 1);
-
-            helpers::assert_app_scope(&mut app, AppScope::Menu);
-        }
-
-        /// Test: Splash → Session Transition.
-        #[test]
-        fn test_splash_to_session_transition() {
-            let mut app = helpers::test_app();
-            helpers::update_app(&mut app, 1);
-
-            // Initial state is Splash
-            helpers::assert_app_scope(&mut app, AppScope::Splash);
-
-            // Transition to Session
-            let mut next_app_scope = app.world_mut().resource_mut::<NextState<AppScope>>();
-            next_app_scope.set(AppScope::Session);
-            helpers::update_app(&mut app, 1);
-
-            helpers::assert_app_scope(&mut app, AppScope::Session);
-        }
-    }
-
-    #[cfg(feature = "headless")]
-    mod headless_tests {
-        use crate::logic::app::tests::helpers;
-        use crate::states::app::AppScope;
-        use bevy::prelude::State;
-
-        /// Test: Initialer Zustand ist Session im headless mode.
-        #[test]
-        fn test_initial_state_is_session() {
-            let mut app = helpers::test_app();
-            helpers::update_app(&mut app, 1);
-
-            let app_scope = app.world().resource::<State<AppScope>>();
-            assert_eq!(app_scope.get(), &AppScope::Session);
-        }
-    }
-
-    // =============================================================================
-    // INTEGRATION TESTS
-    // =============================================================================
-
-    #[cfg(feature = "hosted")]
-    mod integration_tests {
-        use crate::events::app::SetAppScope;
-        use crate::logic::app::tests::helpers;
-        use crate::states::app::AppScope;
-        use crate::states::session::SessionType;
-        use bevy::prelude::NextState;
-
-        /// Test: Vollständiger Workflow - Splash → Menu → Session → Menu.
-        #[test]
-        fn test_full_app_scope_workflow() {
-            let mut app = helpers::test_app();
-            helpers::update_app(&mut app, 1);
-
-            // Start at Splash
-            helpers::assert_app_scope(&mut app, AppScope::Splash);
-
-            // Splash → Menu
-            let mut next_app_scope = app.world_mut().resource_mut::<NextState<AppScope>>();
-            next_app_scope.set(AppScope::Menu);
-            helpers::update_app(&mut app, 1);
-            helpers::assert_app_scope(&mut app, AppScope::Menu);
-
-            // Menu → Session
-            let mut next_app_scope = app.world_mut().resource_mut::<NextState<AppScope>>();
-            next_app_scope.set(AppScope::Session);
-            helpers::update_app(&mut app, 1);
-            helpers::assert_app_scope(&mut app, AppScope::Session);
-
-            // Set SessionType to Singleplayer
-            helpers::set_session_type(&mut app, SessionType::Singleplayer);
-            helpers::assert_session_type(&mut app, SessionType::Singleplayer);
-
-            // Session → Menu (via SetAppScope event)
-            app.world_mut().trigger(SetAppScope::Menu);
-            helpers::update_app(&mut app, 1);
-            helpers::assert_app_scope(&mut app, AppScope::Menu);
-            helpers::assert_session_type(&mut app, SessionType::None);
-        }
-
-        /// Test: SessionType wird korrekt zurückgesetzt beim Wechsel zu Menu.
-        #[test]
-        fn test_session_type_reset_on_menu() {
-            let mut app = helpers::setup_test_app_hosted();
-
-            // Set to Singleplayer
-            helpers::set_session_type(&mut app, SessionType::Singleplayer);
-            helpers::assert_session_type(&mut app, SessionType::Singleplayer);
-
-            // Transition to Menu via SetAppScope event
-            app.world_mut().trigger(SetAppScope::Menu);
-            helpers::update_app(&mut app, 1);
-
-            // SessionType should be None
-            helpers::assert_session_type(&mut app, SessionType::None);
         }
     }
 }

@@ -6,6 +6,8 @@ use bevy::prelude::Event;
 /// and return to the previous menu.
 #[derive(Event, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetWikiMenu {
+    /// Navigate to the wiki overview.
+    Overview,
     /// Navigate to the creatures documentation.
     Creatures,
     /// Navigate to the weapons documentation.

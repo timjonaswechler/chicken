@@ -25,10 +25,7 @@ pub(crate) fn is_valid_main_menu_screen_wiki_transition(
 ) -> bool {
     matches!(
         (from, to),
-        (MainMenuScreen::Wiki, SetWikiMenu::Creatures)
-            | (MainMenuScreen::Wiki, SetWikiMenu::Weapons)
-            | (MainMenuScreen::Wiki, SetWikiMenu::Armor)
-            | (MainMenuScreen::Wiki, SetWikiMenu::Back)
+        (MainMenuScreen::Overview, SetWikiMenu::Overview) | (MainMenuScreen::Wiki, _)
     )
 }
 
@@ -38,21 +35,14 @@ pub(crate) fn is_valid_wiki_menu_screen_transition(
     from: &WikiMenuScreen,
     to: &SetWikiMenu,
 ) -> bool {
-    match (from, to) {
+    matches!(
+        (from, to),
         // From Overview: can go to any category or Back (to MainMenu)
-        (WikiMenuScreen::Overview, SetWikiMenu::Creatures) => true,
-        (WikiMenuScreen::Overview, SetWikiMenu::Weapons) => true,
-        (WikiMenuScreen::Overview, SetWikiMenu::Armor) => true,
-        (WikiMenuScreen::Overview, SetWikiMenu::Back) => true,
-
-        // From categories: only Back to Overview is allowed
-        (WikiMenuScreen::Creatures, SetWikiMenu::Back) => true,
-        (WikiMenuScreen::Weapons, SetWikiMenu::Back) => true,
-        (WikiMenuScreen::Armor, SetWikiMenu::Back) => true,
-
-        // All other transitions are invalid
-        _ => false,
-    }
+        (_, SetWikiMenu::Creatures)
+            | (_, SetWikiMenu::Weapons)
+            | (_, SetWikiMenu::Armor)
+            | (_, SetWikiMenu::Back)
+    )
 }
 
 // --- OBSERVER FUNCTIONS ---
@@ -74,27 +64,10 @@ fn on_set_wiki_menu(
         return;
     }
 
-    // Step 2: Get current substate (must exist when parent is Wiki)
-    let current_state = match current {
-        Some(c) => *c.get(),
-        None => {
-            warn!("WikiMenuScreen does not exist - MainMenuScreen must be Wiki first");
-            return;
-        }
-    };
-
-    // Step 3: Validate substate transition
-    if !is_valid_wiki_menu_screen_transition(&current_state, event.event()) {
-        warn!(
-            "Invalid WikiMenuScreen transition: {:?} -> {:?}",
-            current_state,
-            event.event()
-        );
-        return;
-    }
-
-    // Step 4: Execute state transition
     match *event.event() {
+        SetWikiMenu::Overview => {
+            next_main_screen.set(MainMenuScreen::Wiki);
+        }
         SetWikiMenu::Creatures => {
             next_wiki_screen.set(WikiMenuScreen::Creatures);
         }
@@ -105,13 +78,20 @@ fn on_set_wiki_menu(
             next_wiki_screen.set(WikiMenuScreen::Armor);
         }
         SetWikiMenu::Back => {
-            // From Overview: Back goes to MainMenu
-            // From categories: Back goes to Overview
-            if current_state == WikiMenuScreen::Overview {
-                next_main_screen.set(MainMenuScreen::Overview);
+            if let Some(ref current_state) = current {
+                if !is_valid_wiki_menu_screen_transition(current_state.get(), event.event()) {
+                    warn!(
+                        "Invalid WikiMenuScreen transition: {:?} -> {:?}",
+                        current_state,
+                        event.event()
+                    );
+                    return;
+                }
             } else {
-                next_wiki_screen.set(WikiMenuScreen::Overview);
+                warn!("SingleplayerMenuScreen does not exist - cannot process Back event");
+                return;
             }
+            next_main_screen.set(MainMenuScreen::Overview);
         }
     }
 }

@@ -3,6 +3,7 @@ use {
         events::menu::multiplayer::{
             SetJoinGame, SetMultiplayerMenu, SetNewHostGame, SetSavedHostGame,
         },
+        logic::session::server::PendingGoingPublic,
         states::{
             menu::{
                 main::MainMenuScreen,
@@ -14,7 +15,10 @@ use {
             session::{ServerStatus, ServerVisibility, SessionType},
         },
     },
-    bevy::prelude::{App, AppExtStates, NextState, On, Plugin, Res, ResMut, State, warn},
+    bevy::{
+        ecs::system::Commands,
+        prelude::{App, AppExtStates, NextState, On, Plugin, Res, ResMut, State, warn},
+    },
 };
 
 pub(super) struct MultiplayerMenuPlugin;
@@ -250,13 +254,13 @@ fn on_set_multiplayer_menu(
 /// Handles SetNewHostGame events for the HostNewGame configuration flow.
 fn on_set_new_host_game(
     event: On<SetNewHostGame>,
+    mut commands: Commands,
     current_parent: Res<State<MultiplayerMenuScreen>>,
     current: Option<Res<State<HostNewGameMenuScreen>>>,
     mut next_multiplayer: ResMut<NextState<MultiplayerMenuScreen>>,
     mut next_host_screen: Option<ResMut<NextState<HostNewGameMenuScreen>>>,
     mut next_session_type: ResMut<NextState<SessionType>>,
     mut next_server_status: ResMut<NextState<ServerStatus>>,
-    mut next_server_visibility: ResMut<NextState<ServerVisibility>>,
 ) {
     if !is_valid_multiplayer_menu_screen_host_new_game_transition(
         current_parent.get(),
@@ -290,8 +294,7 @@ fn on_set_new_host_game(
             }
             next_session_type.set(SessionType::Singleplayer);
             next_server_status.set(ServerStatus::Starting);
-            // FIXME: next_server_visibility.set(ServerVisibility::GoingPublic);
-            // Funktioniert nicht da der ServerStatus erstmal running sein muss das es den Substate überhaupt gibt.
+            commands.insert_resource(PendingGoingPublic);
         }
 
         _ => {
@@ -336,13 +339,13 @@ fn on_set_new_host_game(
 /// Handles SetSavedHostGame events for the HostSavedGame configuration flow.
 fn on_set_saved_host_game(
     event: On<SetSavedHostGame>,
+    mut commands: Commands,
     current_parent: Res<State<MultiplayerMenuScreen>>,
     current: Option<Res<State<HostSavedGameMenuScreen>>>,
     mut next_multiplayer: ResMut<NextState<MultiplayerMenuScreen>>,
     mut next_host_screen: Option<ResMut<NextState<HostSavedGameMenuScreen>>>,
     mut next_session_type: ResMut<NextState<SessionType>>,
     mut next_server_status: ResMut<NextState<ServerStatus>>,
-    mut next_server_visibility: ResMut<NextState<ServerVisibility>>,
 ) {
     if !is_valid_multiplayer_menu_screen_host_saved_game_transition(
         current_parent.get(),
@@ -379,8 +382,7 @@ fn on_set_saved_host_game(
             }
             next_session_type.set(SessionType::Singleplayer);
             next_server_status.set(ServerStatus::Starting);
-            // FIXME: next_server_visibility.set(ServerVisibility::GoingPublic);
-            // geliches problem wie oben
+            commands.insert_resource(PendingGoingPublic);
         }
         _ => {
             let current = match current {

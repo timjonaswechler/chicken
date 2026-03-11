@@ -96,7 +96,16 @@ fn server_starting(
     }
 }
 
-fn server_running() {
+fn server_running(
+    marker: Option<Res<PendingGoingPublic>>,
+    mut next_visibility: ResMut<NextState<ServerVisibility>>,
+    mut commands: Commands,
+) {
+    if marker.is_some() {
+        next_visibility.set(ServerVisibility::GoingPublic);
+        commands.remove_resource::<PendingGoingPublic>();
+        info!("Server automatically going public");
+    }
     info!("Local server started");
 }
 

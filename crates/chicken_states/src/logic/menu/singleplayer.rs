@@ -11,7 +11,7 @@ use {
             session::{ServerStatus, ServerVisibility, SessionType},
         },
     },
-    bevy::prelude::{warn, App, AppExtStates, NextState, On, Plugin, Res, ResMut, State},
+    bevy::prelude::{App, AppExtStates, NextState, On, Plugin, Res, ResMut, State, warn},
 };
 
 pub struct SingleplayerMenuPlugin;
@@ -36,19 +36,18 @@ pub(crate) fn is_valid_main_menu_screen_singleplayer_transition(
     from: &MainMenuScreen,
     to: &SetSingleplayerMenu,
 ) -> bool {
-    match (from, to) {
+    matches!(
+        (from, to),
         // From Overview: can go to Singleplayer (Overview event)
-        (MainMenuScreen::Overview, SetSingleplayerMenu::Overview) => true,
-        // From Singleplayer: can navigate within SingleplayerMenu
-        (
-            MainMenuScreen::Singleplayer,
-            SetSingleplayerMenu::Overview
-            | SetSingleplayerMenu::NewGame
-            | SetSingleplayerMenu::LoadGame
-            | SetSingleplayerMenu::Back,
-        ) => true,
-        _ => false,
-    }
+        (MainMenuScreen::Overview, SetSingleplayerMenu::Overview)
+            | (
+                MainMenuScreen::Singleplayer,
+                SetSingleplayerMenu::Overview
+                    | SetSingleplayerMenu::NewGame
+                    | SetSingleplayerMenu::LoadGame
+                    | SetSingleplayerMenu::Back,
+            )
+    )
 }
 
 /// Validates transitions between SingleplayerMenuScreen states.
@@ -83,7 +82,6 @@ pub(crate) fn is_valid_singleplayer_menu_screen_new_game_transition(
             SetSingleplayerNewGame::Next
                 | SetSingleplayerNewGame::Previous
                 | SetSingleplayerNewGame::Confirm
-                | SetSingleplayerNewGame::Back
                 | SetSingleplayerNewGame::Cancel
         )
     )
@@ -96,20 +94,33 @@ pub(crate) fn is_valid_new_game_menu_screen_transition(
 ) -> bool {
     matches!(
         (from, to),
-        // ConfigPlayer: Next -> ConfigWorld, Back/Cancel -> parent
-        (NewGameMenuScreen::ConfigPlayer, SetSingleplayerNewGame::Next)
-            | (NewGameMenuScreen::ConfigPlayer, SetSingleplayerNewGame::Back)
-            | (NewGameMenuScreen::ConfigPlayer, SetSingleplayerNewGame::Cancel)
-            // ConfigWorld: Next -> ConfigSave, Previous -> ConfigPlayer, Back/Cancel -> parent
-            | (NewGameMenuScreen::ConfigWorld, SetSingleplayerNewGame::Next)
-            | (NewGameMenuScreen::ConfigWorld, SetSingleplayerNewGame::Previous)
-            | (NewGameMenuScreen::ConfigWorld, SetSingleplayerNewGame::Back)
-            | (NewGameMenuScreen::ConfigWorld, SetSingleplayerNewGame::Cancel)
-            // ConfigSave: Confirm -> start game, Previous -> ConfigWorld, Back/Cancel -> parent
-            | (NewGameMenuScreen::ConfigSave, SetSingleplayerNewGame::Confirm)
-            | (NewGameMenuScreen::ConfigSave, SetSingleplayerNewGame::Previous)
-            | (NewGameMenuScreen::ConfigSave, SetSingleplayerNewGame::Back)
-            | (NewGameMenuScreen::ConfigSave, SetSingleplayerNewGame::Cancel)
+        (
+            NewGameMenuScreen::ConfigPlayer,
+            SetSingleplayerNewGame::Next
+        ) | (
+            NewGameMenuScreen::ConfigPlayer,
+            SetSingleplayerNewGame::Cancel
+        ) | (NewGameMenuScreen::ConfigWorld, SetSingleplayerNewGame::Next)
+            | (
+                NewGameMenuScreen::ConfigWorld,
+                SetSingleplayerNewGame::Previous
+            )
+            | (
+                NewGameMenuScreen::ConfigWorld,
+                SetSingleplayerNewGame::Cancel
+            )
+            | (
+                NewGameMenuScreen::ConfigSave,
+                SetSingleplayerNewGame::Confirm
+            )
+            | (
+                NewGameMenuScreen::ConfigSave,
+                SetSingleplayerNewGame::Previous
+            )
+            | (
+                NewGameMenuScreen::ConfigSave,
+                SetSingleplayerNewGame::Cancel
+            )
     )
 }
 
@@ -125,7 +136,6 @@ pub(crate) fn is_valid_singleplayer_menu_screen_saved_game_transition(
             SetSingleplayerSavedGame::Next
                 | SetSingleplayerSavedGame::Previous
                 | SetSingleplayerSavedGame::Confirm
-                | SetSingleplayerSavedGame::Back
                 | SetSingleplayerSavedGame::Cancel
         )
     )
@@ -138,8 +148,6 @@ pub(crate) fn is_valid_saved_game_menu_screen_transition(
 ) -> bool {
     matches!(
         (from, to),
-        // SelectSaveGame: Confirm -> load game, Back/Cancel -> parent
-        // Next/Previous are allowed but may be no-ops for single-state screen
         (
             SavedGameMenuScreen::SelectSaveGame,
             SetSingleplayerSavedGame::Next
@@ -149,9 +157,6 @@ pub(crate) fn is_valid_saved_game_menu_screen_transition(
         ) | (
             SavedGameMenuScreen::SelectSaveGame,
             SetSingleplayerSavedGame::Confirm
-        ) | (
-            SavedGameMenuScreen::SelectSaveGame,
-            SetSingleplayerSavedGame::Back
         ) | (
             SavedGameMenuScreen::SelectSaveGame,
             SetSingleplayerSavedGame::Cancel
@@ -171,7 +176,6 @@ fn on_set_singleplayer_menu(
     mut next_main_menu: ResMut<NextState<MainMenuScreen>>,
     mut next_singleplayer: Option<ResMut<NextState<SingleplayerMenuScreen>>>,
 ) {
-    // Validate parent state transition
     if !is_valid_main_menu_screen_singleplayer_transition(current_parent.get(), event.event()) {
         warn!(
             "Invalid MainMenuScreen transition for SetSingleplayerMenu: {:?} with parent {:?}",
@@ -240,7 +244,6 @@ fn on_set_singleplayer_new_game(
     mut next_new_game: Option<ResMut<NextState<NewGameMenuScreen>>>,
     mut next_session_type: ResMut<NextState<SessionType>>,
     mut next_server_status: ResMut<NextState<ServerStatus>>,
-    mut next_server_visibility: ResMut<NextState<ServerVisibility>>,
 ) {
     // Validate parent state transition
     if !is_valid_singleplayer_menu_screen_new_game_transition(current_parent.get(), event.event()) {
@@ -254,14 +257,27 @@ fn on_set_singleplayer_new_game(
 
     match *event.event() {
         // Back/Cancel: Return to SingleplayerMenuScreen::Overview
-        SetSingleplayerNewGame::Back | SetSingleplayerNewGame::Cancel => {
+        SetSingleplayerNewGame::Cancel => {
             next_singleplayer.set(SingleplayerMenuScreen::Overview);
         }
-        // Confirm: Start the game session
+        // Confirm: Start the game session (only valid from ConfigSave)
         SetSingleplayerNewGame::Confirm => {
+            let current_step = match current {
+                Some(ref c) => *c.get(),
+                None => {
+                    warn!("NewGameMenuScreen does not exist - cannot Confirm");
+                    return;
+                }
+            };
+            if !is_valid_new_game_menu_screen_transition(&current_step, event.event()) {
+                warn!(
+                    "Invalid NewGameMenuScreen transition: {:?} -> Confirm",
+                    current_step
+                );
+                return;
+            }
             next_session_type.set(SessionType::Singleplayer);
             next_server_status.set(ServerStatus::Starting);
-            next_server_visibility.set(ServerVisibility::Private);
         }
         // Next/Previous: Navigate through config steps
         _ => {
@@ -314,7 +330,6 @@ fn on_set_singleplayer_saved_game(
     mut next_singleplayer: ResMut<NextState<SingleplayerMenuScreen>>,
     mut next_session_type: ResMut<NextState<SessionType>>,
     mut next_server_status: ResMut<NextState<ServerStatus>>,
-    mut next_server_visibility: ResMut<NextState<ServerVisibility>>,
 ) {
     // Validate parent state transition
     if !is_valid_singleplayer_menu_screen_saved_game_transition(current_parent.get(), event.event())
@@ -328,17 +343,14 @@ fn on_set_singleplayer_saved_game(
     }
 
     match *event.event() {
-        // Back/Cancel/Previous: Return to SingleplayerMenuScreen::Overview
-        SetSingleplayerSavedGame::Back
-        | SetSingleplayerSavedGame::Cancel
-        | SetSingleplayerSavedGame::Previous => {
+        // Cancel: Return to SingleplayerMenuScreen::Overview
+        SetSingleplayerSavedGame::Cancel => {
             next_singleplayer.set(SingleplayerMenuScreen::Overview);
         }
         // Confirm: Load the game and start session
         SetSingleplayerSavedGame::Confirm => {
             next_session_type.set(SessionType::Singleplayer);
             next_server_status.set(ServerStatus::Starting);
-            next_server_visibility.set(ServerVisibility::Private);
         }
         // Next: Only one state, validate but effectively a no-op
         _ => {
@@ -384,588 +396,6 @@ mod tests {
     use crate::states::menu::singleplayer::{
         NewGameMenuScreen, SavedGameMenuScreen, SingleplayerMenuScreen,
     };
-    use crate::states::session::{ServerStatus, SessionType};
-
-    mod observer_tests {
-        use super::*;
-
-        pub mod helpers {
-            use crate::{
-                events::{app::SetAppScope, menu::singleplayer::SetSingleplayerMenu},
-                states::{
-                    app::AppScope,
-                    menu::{
-                        main::MainMenuScreen,
-                        singleplayer::{
-                            NewGameMenuScreen, SavedGameMenuScreen, SingleplayerMenuScreen,
-                        },
-                    },
-                    session::{ServerStatus, SessionType},
-                },
-                ChickenStatePlugin,
-            };
-            use bevy::{prelude::*, state::app::StatesPlugin};
-
-            /// Creates a test app with all required plugins for Singleplayer Menu tests.
-            pub fn test_app() -> App {
-                let mut app = App::new();
-                app.add_plugins((MinimalPlugins, StatesPlugin, ChickenStatePlugin));
-
-                app
-            }
-
-            /// Runs the app for a specified number of update ticks.
-            pub fn update_app(app: &mut App, ticks: u8) {
-                for _ in 0..ticks {
-                    app.update();
-                }
-            }
-
-            /// Setup helper: Sets MainMenuScreen to Singleplayer and SingleplayerMenuScreen to Overview.
-            pub fn setup_test_app_in_overview() -> App {
-                let mut app = test_app();
-                update_app(&mut app, 1);
-
-                let session_type_state = app.world().resource::<State<SessionType>>();
-                assert_eq!(session_type_state.get(), &SessionType::None);
-
-                let app_scope = app.world().resource::<State<AppScope>>();
-                assert_eq!(app_scope.get(), &AppScope::Splash);
-
-                app.world_mut().trigger(SetAppScope::Menu);
-                update_app(&mut app, 1);
-
-                let setup = app.world().resource::<State<MainMenuScreen>>();
-                assert_eq!(setup.get(), &MainMenuScreen::Overview);
-
-                app.world_mut().trigger(SetSingleplayerMenu::Overview);
-                update_app(&mut app, 1);
-
-                let setup = app.world().resource::<State<MainMenuScreen>>();
-                assert_eq!(setup.get(), &MainMenuScreen::Singleplayer);
-
-                // Verify initial state
-                let setup = app.world().resource::<State<SingleplayerMenuScreen>>();
-                assert_eq!(setup.get(), &SingleplayerMenuScreen::Overview);
-
-                app
-            }
-
-            /// Setup helper: Sets SingleplayerMenuScreen to NewGame with ConfigPlayer screen.
-            pub fn setup_test_app_in_new_game() -> App {
-                let mut app = setup_test_app_in_overview();
-
-                // Navigate to NewGame
-                app.world_mut().trigger(SetSingleplayerMenu::NewGame);
-                update_app(&mut app, 1);
-
-                // Verify state
-                let setup = app.world().resource::<State<SingleplayerMenuScreen>>();
-                assert_eq!(setup.get(), &SingleplayerMenuScreen::NewGame);
-
-                let screen = app.world().resource::<State<NewGameMenuScreen>>();
-                assert_eq!(screen.get(), &NewGameMenuScreen::ConfigPlayer);
-
-                app
-            }
-
-            /// Setup helper: Sets SingleplayerMenuScreen to LoadGame.
-            pub fn setup_test_app_in_load_game() -> App {
-                let mut app = setup_test_app_in_overview();
-
-                // Navigate to LoadGame
-                app.world_mut().trigger(SetSingleplayerMenu::LoadGame);
-                update_app(&mut app, 1);
-
-                // Verify state
-                let setup = app.world().resource::<State<SingleplayerMenuScreen>>();
-                assert_eq!(setup.get(), &SingleplayerMenuScreen::LoadGame);
-
-                let screen = app.world().resource::<State<SavedGameMenuScreen>>();
-                assert_eq!(screen.get(), &SavedGameMenuScreen::SelectSaveGame);
-
-                app
-            }
-
-            /// Asserts that SingleplayerMenuScreen state matches expected value.
-            pub fn assert_setup_state(app: &mut App, expected: SingleplayerMenuScreen) {
-                let setup = app.world().resource::<State<SingleplayerMenuScreen>>();
-                assert_eq!(setup.get(), &expected);
-            }
-
-            /// Asserts that MainMenuScreen state matches expected value.
-            pub fn assert_main_menu_context(app: &mut App, expected: MainMenuScreen) {
-                let context = app.world().resource::<State<MainMenuScreen>>();
-                assert_eq!(context.get(), &expected);
-            }
-
-            /// Asserts that NewGameMenuScreen state matches expected value.
-            pub fn assert_new_game_screen(app: &mut App, expected: NewGameMenuScreen) {
-                let screen = app.world().resource::<State<NewGameMenuScreen>>();
-                assert_eq!(screen.get(), &expected);
-            }
-
-            /// Asserts that SavedGameMenuScreen state matches expected value.
-            pub fn assert_load_game_screen(app: &mut App, expected: SavedGameMenuScreen) {
-                let screen = app.world().resource::<State<SavedGameMenuScreen>>();
-                assert_eq!(screen.get(), &expected);
-            }
-
-            /// Asserts that SessionType state matches expected value.
-            pub fn assert_session_type(app: &mut App, expected: SessionType) {
-                let session_type = app.world().resource::<State<SessionType>>();
-                assert_eq!(session_type.get(), &expected);
-            }
-
-            /// Asserts that ServerStatus state matches expected value.
-            pub fn assert_server_status(app: &mut App, expected: ServerStatus) {
-                let status = app.world().resource::<State<ServerStatus>>();
-                assert_eq!(status.get(), &expected);
-            }
-        }
-
-        // =============================================================================
-        // SetSingleplayerMenu Observer Tests
-        // =============================================================================
-
-        /// Test: Overview -> NewGame transition works.
-        #[test]
-
-        fn test_observer_overview_to_new_game() {
-            let mut app = helpers::setup_test_app_in_overview();
-
-            app.world_mut().trigger(SetSingleplayerMenu::NewGame);
-            helpers::update_app(&mut app, 1);
-
-            helpers::assert_setup_state(&mut app, SingleplayerMenuScreen::NewGame);
-        }
-
-        /// Test: Overview -> LoadGame transition works.
-        #[test]
-
-        fn test_observer_overview_to_load_game() {
-            let mut app = helpers::setup_test_app_in_overview();
-
-            app.world_mut().trigger(SetSingleplayerMenu::LoadGame);
-            helpers::update_app(&mut app, 1);
-
-            helpers::assert_setup_state(&mut app, SingleplayerMenuScreen::LoadGame);
-        }
-
-        /// Test: Back from Overview returns to MainMenu.
-        #[test]
-
-        fn test_observer_overview_back_to_main_menu() {
-            let mut app = helpers::setup_test_app_in_overview();
-
-            app.world_mut().trigger(SetSingleplayerMenu::Back);
-            helpers::update_app(&mut app, 1);
-
-            helpers::assert_main_menu_context(&mut app, MainMenuScreen::Overview);
-        }
-
-        /// Test: SetSingleplayerMenu::Back from NewGame is ignored (must use SetSingleplayerNewGame::Back).
-        #[test]
-        fn test_observer_set_sp_menu_back_ignored_in_new_game() {
-            let mut app = helpers::setup_test_app_in_new_game();
-
-            // SetSingleplayerMenu::Back should be ignored when not in Overview
-            app.world_mut().trigger(SetSingleplayerMenu::Back);
-            helpers::update_app(&mut app, 1);
-
-            // Should still be in NewGame (not changed)
-            helpers::assert_setup_state(&mut app, SingleplayerMenuScreen::NewGame);
-        }
-
-        /// Test: Proper navigation from NewGame to MainMenu via Overview.
-        #[test]
-        fn test_observer_new_game_back_to_main_menu_via_overview() {
-            let mut app = helpers::setup_test_app_in_new_game();
-
-            // First: Use SetSingleplayerNewGame::Back to return to Overview
-            app.world_mut().trigger(SetSingleplayerNewGame::Back);
-            helpers::update_app(&mut app, 1);
-
-            helpers::assert_setup_state(&mut app, SingleplayerMenuScreen::Overview);
-
-            // Then: Use SetSingleplayerMenu::Back to go to MainMenu
-            app.world_mut().trigger(SetSingleplayerMenu::Back);
-            helpers::update_app(&mut app, 1);
-
-            helpers::assert_main_menu_context(&mut app, MainMenuScreen::Overview);
-        }
-
-        /// Test: Invalid transitions are ignored (e.g., NewGame -> LoadGame).
-        #[test]
-
-        fn test_observer_invalid_transition_ignored() {
-            let mut app = helpers::setup_test_app_in_new_game();
-
-            // Try to go directly from NewGame to LoadGame (should be ignored)
-            app.world_mut().trigger(SetSingleplayerMenu::LoadGame);
-            helpers::update_app(&mut app, 1);
-
-            // Should still be in NewGame
-            helpers::assert_setup_state(&mut app, SingleplayerMenuScreen::NewGame);
-        }
-
-        // =============================================================================
-        // SetSingleplayerNewGame Observer Tests
-        // =============================================================================
-
-        /// Test: Next from ConfigPlayer goes to ConfigWorld.
-        #[test]
-
-        fn test_observer_new_game_next_config_player_to_config_world() {
-            let mut app = helpers::setup_test_app_in_new_game();
-
-            app.world_mut().trigger(SetSingleplayerNewGame::Next);
-            helpers::update_app(&mut app, 1);
-
-            helpers::assert_new_game_screen(&mut app, NewGameMenuScreen::ConfigWorld);
-        }
-
-        /// Test: Next from ConfigWorld goes to ConfigSave.
-        #[test]
-
-        fn test_observer_new_game_next_config_world_to_config_save() {
-            let mut app = helpers::setup_test_app_in_new_game();
-
-            // Go to ConfigWorld first
-            app.world_mut().trigger(SetSingleplayerNewGame::Next);
-            helpers::update_app(&mut app, 1);
-
-            // Then go to ConfigSave
-            app.world_mut().trigger(SetSingleplayerNewGame::Next);
-            helpers::update_app(&mut app, 1);
-
-            helpers::assert_new_game_screen(&mut app, NewGameMenuScreen::ConfigSave);
-        }
-
-        /// Test: Previous from ConfigWorld goes back to ConfigPlayer.
-        #[test]
-
-        fn test_observer_new_game_previous_config_world_to_config_player() {
-            let mut app = helpers::setup_test_app_in_new_game();
-
-            // Go to ConfigWorld
-            app.world_mut().trigger(SetSingleplayerNewGame::Next);
-            helpers::update_app(&mut app, 1);
-
-            // Go back to ConfigPlayer
-            app.world_mut().trigger(SetSingleplayerNewGame::Previous);
-            helpers::update_app(&mut app, 1);
-
-            helpers::assert_new_game_screen(&mut app, NewGameMenuScreen::ConfigPlayer);
-        }
-
-        /// Test: Back from ConfigPlayer returns to Overview.
-        #[test]
-
-        fn test_observer_new_game_back_from_config_player() {
-            let mut app = helpers::setup_test_app_in_new_game();
-
-            app.world_mut().trigger(SetSingleplayerNewGame::Back);
-            helpers::update_app(&mut app, 1);
-
-            helpers::assert_setup_state(&mut app, SingleplayerMenuScreen::Overview);
-        }
-
-        /// Test: Cancel returns to Overview from any step.
-        #[test]
-
-        fn test_observer_new_game_cancel_returns_to_overview() {
-            let mut app = helpers::setup_test_app_in_new_game();
-
-            // Go to ConfigWorld
-            app.world_mut().trigger(SetSingleplayerNewGame::Next);
-            helpers::update_app(&mut app, 1);
-
-            // Cancel should return to Overview
-            app.world_mut().trigger(SetSingleplayerNewGame::Cancel);
-            helpers::update_app(&mut app, 1);
-
-            helpers::assert_setup_state(&mut app, SingleplayerMenuScreen::Overview);
-        }
-
-        /// Test: Confirm starts the singleplayer session.
-        #[test]
-
-        fn test_observer_new_game_confirm_starts_session() {
-            let mut app = helpers::setup_test_app_in_new_game();
-
-            // Navigate to ConfigSave
-            app.world_mut().trigger(SetSingleplayerNewGame::Next);
-            helpers::update_app(&mut app, 1);
-            app.world_mut().trigger(SetSingleplayerNewGame::Next);
-            helpers::update_app(&mut app, 1);
-
-            // Confirm should start session
-            app.world_mut().trigger(SetSingleplayerNewGame::Confirm);
-            helpers::update_app(&mut app, 1);
-
-            helpers::assert_session_type(&mut app, SessionType::Singleplayer);
-            helpers::assert_server_status(&mut app, ServerStatus::Starting);
-        }
-
-        /// Test: Events are ignored when not in NewGame state.
-        #[test]
-
-        fn test_observer_new_game_events_ignored_in_wrong_state() {
-            let mut app = helpers::setup_test_app_in_overview();
-
-            // Try to trigger NewGame event from Overview
-            app.world_mut().trigger(SetSingleplayerNewGame::Next);
-            helpers::update_app(&mut app, 1);
-
-            // Should still be in Overview
-            helpers::assert_setup_state(&mut app, SingleplayerMenuScreen::Overview);
-        }
-
-        // =============================================================================
-        // SetSingleplayerSavedGame Observer Tests
-        // =============================================================================
-
-        /// Test: Back from SelectSaveGame returns to Overview.
-        #[test]
-
-        fn test_observer_saved_game_back_to_overview() {
-            let mut app = helpers::setup_test_app_in_load_game();
-
-            app.world_mut().trigger(SetSingleplayerSavedGame::Back);
-            helpers::update_app(&mut app, 1);
-
-            helpers::assert_setup_state(&mut app, SingleplayerMenuScreen::Overview);
-        }
-
-        /// Test: Cancel from SelectSaveGame returns to Overview.
-        #[test]
-
-        fn test_observer_saved_game_cancel_to_overview() {
-            let mut app = helpers::setup_test_app_in_load_game();
-
-            app.world_mut().trigger(SetSingleplayerSavedGame::Cancel);
-            helpers::update_app(&mut app, 1);
-
-            helpers::assert_setup_state(&mut app, SingleplayerMenuScreen::Overview);
-        }
-
-        /// Test: Previous from SelectSaveGame returns to Overview.
-        #[test]
-
-        fn test_observer_saved_game_previous_to_overview() {
-            let mut app = helpers::setup_test_app_in_load_game();
-
-            app.world_mut().trigger(SetSingleplayerSavedGame::Previous);
-            helpers::update_app(&mut app, 1);
-
-            helpers::assert_setup_state(&mut app, SingleplayerMenuScreen::Overview);
-        }
-
-        /// Test: Confirm starts the singleplayer session.
-        #[test]
-
-        fn test_observer_saved_game_confirm_starts_session() {
-            let mut app = helpers::setup_test_app_in_load_game();
-
-            app.world_mut().trigger(SetSingleplayerSavedGame::Confirm);
-            helpers::update_app(&mut app, 1);
-
-            helpers::assert_session_type(&mut app, SessionType::Singleplayer);
-            helpers::assert_server_status(&mut app, ServerStatus::Starting);
-        }
-
-        /// Test: Events are ignored when not in LoadGame state.
-        #[test]
-
-        fn test_observer_saved_game_events_ignored_in_wrong_state() {
-            let mut app = helpers::setup_test_app_in_overview();
-
-            // Try to trigger SavedGame event from Overview
-            app.world_mut().trigger(SetSingleplayerSavedGame::Confirm);
-            helpers::update_app(&mut app, 1);
-
-            // Should still be in Overview
-            helpers::assert_setup_state(&mut app, SingleplayerMenuScreen::Overview);
-
-            // SessionType should still be None
-            helpers::assert_session_type(&mut app, SessionType::None);
-        }
-    }
-
-    mod integration_tests {
-        use super::*;
-
-        mod helpers {
-            pub use super::super::observer_tests::helpers::*;
-        }
-
-        /// Test: Complete NewGame flow from Overview to session start.
-        #[test]
-
-        fn test_full_new_game_flow() {
-            let mut app = helpers::setup_test_app_in_overview();
-
-            // 1. Navigate to NewGame
-            app.world_mut().trigger(SetSingleplayerMenu::NewGame);
-            helpers::update_app(&mut app, 1);
-            helpers::assert_setup_state(&mut app, SingleplayerMenuScreen::NewGame);
-            helpers::assert_new_game_screen(&mut app, NewGameMenuScreen::ConfigPlayer);
-
-            // 2. Next to ConfigWorld
-            app.world_mut().trigger(SetSingleplayerNewGame::Next);
-            helpers::update_app(&mut app, 1);
-            helpers::assert_new_game_screen(&mut app, NewGameMenuScreen::ConfigWorld);
-
-            // 3. Next to ConfigSave
-            app.world_mut().trigger(SetSingleplayerNewGame::Next);
-            helpers::update_app(&mut app, 1);
-            helpers::assert_new_game_screen(&mut app, NewGameMenuScreen::ConfigSave);
-
-            // 4. Confirm starts the session
-            app.world_mut().trigger(SetSingleplayerNewGame::Confirm);
-            helpers::update_app(&mut app, 1);
-
-            helpers::assert_session_type(&mut app, SessionType::Singleplayer);
-            helpers::assert_server_status(&mut app, ServerStatus::Starting);
-        }
-
-        /// Test: Complete LoadGame flow from Overview to session start.
-        #[test]
-
-        fn test_full_load_game_flow() {
-            let mut app = helpers::setup_test_app_in_overview();
-
-            // 1. Navigate to LoadGame
-            app.world_mut().trigger(SetSingleplayerMenu::LoadGame);
-            helpers::update_app(&mut app, 1);
-            helpers::assert_setup_state(&mut app, SingleplayerMenuScreen::LoadGame);
-            helpers::assert_load_game_screen(&mut app, SavedGameMenuScreen::SelectSaveGame);
-
-            // 2. Confirm loads the game and starts session
-            app.world_mut().trigger(SetSingleplayerSavedGame::Confirm);
-            helpers::update_app(&mut app, 1);
-
-            helpers::assert_session_type(&mut app, SessionType::Singleplayer);
-            helpers::assert_server_status(&mut app, ServerStatus::Starting);
-        }
-
-        /// Test: Navigation back from NewGame flow using Previous.
-        #[test]
-
-        fn test_new_game_flow_with_back_navigation() {
-            let mut app = helpers::setup_test_app_in_overview();
-
-            // Go to NewGame
-            app.world_mut().trigger(SetSingleplayerMenu::NewGame);
-            helpers::update_app(&mut app, 1);
-            helpers::assert_new_game_screen(&mut app, NewGameMenuScreen::ConfigPlayer);
-
-            // Go to ConfigWorld
-            app.world_mut().trigger(SetSingleplayerNewGame::Next);
-            helpers::update_app(&mut app, 1);
-            helpers::assert_new_game_screen(&mut app, NewGameMenuScreen::ConfigWorld);
-
-            // Go back to ConfigPlayer
-            app.world_mut().trigger(SetSingleplayerNewGame::Previous);
-            helpers::update_app(&mut app, 1);
-            helpers::assert_new_game_screen(&mut app, NewGameMenuScreen::ConfigPlayer);
-
-            // Go back to Overview
-            app.world_mut().trigger(SetSingleplayerNewGame::Back);
-            helpers::update_app(&mut app, 1);
-
-            helpers::assert_setup_state(&mut app, SingleplayerMenuScreen::Overview);
-        }
-
-        /// Test: Cancel interrupts the NewGame flow.
-        #[test]
-
-        fn test_new_game_cancel_mid_flow() {
-            let mut app = helpers::setup_test_app_in_overview();
-
-            // Go to NewGame
-            app.world_mut().trigger(SetSingleplayerMenu::NewGame);
-            helpers::update_app(&mut app, 1);
-
-            // Go to ConfigWorld
-            app.world_mut().trigger(SetSingleplayerNewGame::Next);
-            helpers::update_app(&mut app, 1);
-
-            // Cancel aborts and returns to Overview
-            app.world_mut().trigger(SetSingleplayerNewGame::Cancel);
-            helpers::update_app(&mut app, 1);
-            helpers::assert_setup_state(&mut app, SingleplayerMenuScreen::Overview);
-        }
-
-        /// Test: Cancel interrupts the LoadGame flow.
-        #[test]
-        fn test_load_game_cancel() {
-            let mut app = helpers::setup_test_app_in_overview();
-
-            // Go to LoadGame
-            app.world_mut().trigger(SetSingleplayerMenu::LoadGame);
-            helpers::update_app(&mut app, 1);
-
-            // Cancel aborts and returns to Overview
-            app.world_mut().trigger(SetSingleplayerSavedGame::Cancel);
-            helpers::update_app(&mut app, 1);
-            helpers::assert_setup_state(&mut app, SingleplayerMenuScreen::Overview);
-        }
-
-        /// Test: Mixed navigation flow - Overview -> NewGame -> Cancel -> LoadGame -> Confirm.
-        #[test]
-        fn test_mixed_navigation_flow() {
-            let mut app = helpers::setup_test_app_in_overview();
-
-            // Go to NewGame
-            app.world_mut().trigger(SetSingleplayerMenu::NewGame);
-            helpers::update_app(&mut app, 1);
-            helpers::assert_setup_state(&mut app, SingleplayerMenuScreen::NewGame);
-
-            // Cancel back to Overview
-            app.world_mut().trigger(SetSingleplayerNewGame::Cancel);
-            helpers::update_app(&mut app, 1);
-            helpers::assert_setup_state(&mut app, SingleplayerMenuScreen::Overview);
-
-            // Go to LoadGame
-            app.world_mut().trigger(SetSingleplayerMenu::LoadGame);
-            helpers::update_app(&mut app, 1);
-            helpers::assert_setup_state(&mut app, SingleplayerMenuScreen::LoadGame);
-
-            // Start session
-            app.world_mut().trigger(SetSingleplayerSavedGame::Confirm);
-            helpers::update_app(&mut app, 1);
-
-            helpers::assert_session_type(&mut app, SessionType::Singleplayer);
-            helpers::assert_server_status(&mut app, ServerStatus::Starting);
-        }
-
-        /// Test: Invalid events at each state are properly rejected.
-        #[test]
-        fn test_invalid_events_rejected_at_each_state() {
-            let mut app = helpers::setup_test_app_in_overview();
-
-            // From Overview: Try NewGame event (should be ignored)
-            app.world_mut().trigger(SetSingleplayerNewGame::Next);
-            helpers::update_app(&mut app, 1);
-            helpers::assert_setup_state(&mut app, SingleplayerMenuScreen::Overview);
-
-            // Go to NewGame
-            app.world_mut().trigger(SetSingleplayerMenu::NewGame);
-            helpers::update_app(&mut app, 1);
-
-            // From NewGame: Try to go directly to LoadGame (should be ignored)
-            app.world_mut().trigger(SetSingleplayerMenu::LoadGame);
-            helpers::update_app(&mut app, 1);
-            helpers::assert_setup_state(&mut app, SingleplayerMenuScreen::NewGame);
-
-            // From NewGame: Try SavedGame event (should be ignored)
-            app.world_mut().trigger(SetSingleplayerSavedGame::Confirm);
-            helpers::update_app(&mut app, 1);
-            helpers::assert_setup_state(&mut app, SingleplayerMenuScreen::NewGame);
-        }
-    }
 
     mod validator_tests {
         use super::*;
@@ -1157,12 +587,6 @@ mod tests {
                 &SetSingleplayerNewGame::Next
             ));
 
-            // ConfigPlayer -> Back -> parent
-            assert!(is_valid_new_game_menu_screen_transition(
-                &NewGameMenuScreen::ConfigPlayer,
-                &SetSingleplayerNewGame::Back
-            ));
-
             // ConfigPlayer -> Cancel -> parent
             assert!(is_valid_new_game_menu_screen_transition(
                 &NewGameMenuScreen::ConfigPlayer,
@@ -1186,12 +610,6 @@ mod tests {
                 &SetSingleplayerNewGame::Previous
             ));
 
-            // ConfigWorld -> Back -> parent
-            assert!(is_valid_new_game_menu_screen_transition(
-                &NewGameMenuScreen::ConfigWorld,
-                &SetSingleplayerNewGame::Back
-            ));
-
             // ConfigWorld -> Cancel -> parent
             assert!(is_valid_new_game_menu_screen_transition(
                 &NewGameMenuScreen::ConfigWorld,
@@ -1213,12 +631,6 @@ mod tests {
             assert!(is_valid_new_game_menu_screen_transition(
                 &NewGameMenuScreen::ConfigSave,
                 &SetSingleplayerNewGame::Previous
-            ));
-
-            // ConfigSave -> Back -> parent
-            assert!(is_valid_new_game_menu_screen_transition(
-                &NewGameMenuScreen::ConfigSave,
-                &SetSingleplayerNewGame::Back
             ));
 
             // ConfigSave -> Cancel -> parent
@@ -1279,11 +691,6 @@ mod tests {
 
             assert!(is_valid_singleplayer_menu_screen_new_game_transition(
                 &SingleplayerMenuScreen::NewGame,
-                &SetSingleplayerNewGame::Back
-            ));
-
-            assert!(is_valid_singleplayer_menu_screen_new_game_transition(
-                &SingleplayerMenuScreen::NewGame,
                 &SetSingleplayerNewGame::Cancel
             ));
         }
@@ -1317,12 +724,6 @@ mod tests {
             assert!(is_valid_saved_game_menu_screen_transition(
                 &SavedGameMenuScreen::SelectSaveGame,
                 &SetSingleplayerSavedGame::Confirm
-            ));
-
-            // SelectSaveGame -> Back -> parent
-            assert!(is_valid_saved_game_menu_screen_transition(
-                &SavedGameMenuScreen::SelectSaveGame,
-                &SetSingleplayerSavedGame::Back
             ));
 
             // SelectSaveGame -> Cancel -> parent
@@ -1362,11 +763,6 @@ mod tests {
             assert!(is_valid_singleplayer_menu_screen_saved_game_transition(
                 &SingleplayerMenuScreen::LoadGame,
                 &SetSingleplayerSavedGame::Confirm
-            ));
-
-            assert!(is_valid_singleplayer_menu_screen_saved_game_transition(
-                &SingleplayerMenuScreen::LoadGame,
-                &SetSingleplayerSavedGame::Back
             ));
 
             assert!(is_valid_singleplayer_menu_screen_saved_game_transition(

@@ -31,8 +31,6 @@ pub enum SetSingleplayerNewGame {
     Previous,
     /// Confirm settings and start the new game.
     Confirm,
-    /// Return to the singleplayer overview without saving changes.
-    Back,
     /// Cancel the game creation process and discard all configuration.
     Cancel,
 }
@@ -49,8 +47,6 @@ pub enum SetSingleplayerSavedGame {
     Previous,
     /// Confirm the selected save and load the game.
     Confirm,
-    /// Return to the singleplayer overview.
-    Back,
     /// Cancel the load process.
     Cancel,
 }

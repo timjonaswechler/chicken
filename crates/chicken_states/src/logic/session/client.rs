@@ -194,19 +194,27 @@ pub(crate) fn is_valid_disconnecting_step_transition(
 
 fn on_connecting_step(
     event: On<SetConnectingStep>,
-    current_parent: Res<State<ClientConnectionStatus>>,
+    current_parent: Option<Res<State<ClientConnectionStatus>>>,
     current: Option<Res<State<ConnectingStep>>>,
-    mut next_client_status: ResMut<NextState<ClientConnectionStatus>>,
+    mut next_client_status: Option<ResMut<NextState<ClientConnectionStatus>>>,
     mut next_connecting_step: Option<ResMut<NextState<ConnectingStep>>>,
     mut next_session_type: ResMut<NextState<SessionType>>,
     mut next_app_scope: ResMut<NextState<AppScope>>,
 ) {
+    let status = match current_parent {
+        Some(ref s) => s.get(),
+        None => {
+            warn!("SetConnectingStep fired but ClientConnectionStatus does not exist (wrong SessionType?)");
+            return;
+        }
+    };
+
     // Validate parent state transition
-    if !is_valid_client_status_connecting_transition(current_parent.get(), event.event()) {
+    if !is_valid_client_status_connecting_transition(status, event.event()) {
         warn!(
             "Invalid ClientConnectionStatus transition for ConnectingStep: {:?} with parent status {:?}",
             event.event(),
-            current_parent.get()
+            status
         );
         return;
     }
@@ -214,7 +222,9 @@ fn on_connecting_step(
     match *event.event() {
         // Start: Wechselt ClientConnectionStatus zu Connecting UND setzt Step auf ResolveAddress
         SetConnectingStep::Start => {
-            next_client_status.set(ClientConnectionStatus::Connecting);
+            if let Some(ref mut s) = next_client_status {
+                s.set(ClientConnectionStatus::Connecting);
+            }
             if let Some(ref mut next_step) = next_connecting_step {
                 next_step.set(ConnectingStep::ResolveAddress);
             }
@@ -263,10 +273,14 @@ fn on_connecting_step(
                     }
                 }
                 (ConnectingStep::Ready, SetConnectingStep::Done) => {
-                    next_client_status.set(ClientConnectionStatus::Connected);
+                    if let Some(ref mut s) = next_client_status {
+                        s.set(ClientConnectionStatus::Connected);
+                    }
                 }
                 (_, SetConnectingStep::Failed) => {
-                    next_client_status.set(ClientConnectionStatus::Disconnected);
+                    if let Some(ref mut s) = next_client_status {
+                        s.set(ClientConnectionStatus::Disconnected);
+                    }
                     next_session_type.set(SessionType::None);
                     next_app_scope.set(AppScope::Menu);
                     // TODO: Notification Error
@@ -457,9 +471,7 @@ mod tests {
     mod helpers {
 
         use crate::{
-            events::session::{
-                SetConnectingStep, SetDisconnectingStep, SetSessionType, SetSyncingStep,
-            },
+            events::session::{SetConnectingStep, SetDisconnectingStep, SetSyncingStep},
             logic::{app::AppLogicPlugin, session::client::ClientSessionPlugin},
             states::{
                 app::AppScope,
@@ -520,11 +532,6 @@ mod tests {
                 assert_eq!(app_scope.get(), &AppScope::Menu);
                 let session_type = app.world().resource::<State<SessionType>>();
                 assert_eq!(session_type.get(), &SessionType::None);
-            }
-
-            {
-                app.world_mut().trigger(SetSessionType::Client);
-                update_app(&mut app, 1);
             }
 
             {

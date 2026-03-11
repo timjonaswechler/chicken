@@ -30,8 +30,6 @@ pub enum SetNewHostGame {
     Previous,
     /// Confirm settings and proceed to game start.
     Confirm,
-    /// Return to the multiplayer overview without saving changes.
-    Back,
     /// Cancel the hosting process and discard all configuration.
     Cancel,
 }
@@ -48,8 +46,6 @@ pub enum SetSavedHostGame {
     Previous,
     /// Confirm the selected save and start hosting.
     Confirm,
-    /// Return to the multiplayer overview.
-    Back,
     /// Cancel the hosting process.
     Cancel,
 }
@@ -66,8 +62,6 @@ pub enum SetJoinGame {
     Previous,
     /// Confirm server selection and attempt connection.
     Confirm,
-    /// Return to the multiplayer overview.
-    Back,
     /// Cancel the join process.
     Cancel,
 }

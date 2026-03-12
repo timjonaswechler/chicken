@@ -14,7 +14,7 @@ use {
             ServerStartupStep, ServerStatus, ServerVisibility, SessionState, SessionType,
         },
     },
-    bevy::prelude::{App, AppExtStates, NextState, On, Plugin, Res, ResMut, Resource, State, warn},
+    bevy::prelude::{warn, App, AppExtStates, NextState, On, Plugin, Res, ResMut, Resource, State},
 };
 
 pub struct ServerSessionPlugin;
@@ -108,19 +108,10 @@ pub(crate) fn is_valid_server_status_startup_transition(
 ) -> bool {
     matches!(
         (from, to),
-        (ServerStatus::Offline, SetServerStartupStep::Start)
-            | (ServerStatus::Starting, SetServerStartupStep::Next)
+        (ServerStatus::Starting, SetServerStartupStep::Next)
             | (ServerStatus::Starting, SetServerStartupStep::Failed)
             | (ServerStatus::Starting, SetServerStartupStep::Done)
     )
-}
-
-/// For hosted builds: server startup is only valid when a real session has been initiated
-/// from the menu (Singleplayer confirm or Multiplayer host confirm).
-/// Without a valid SessionType the server has no context to start in.
-#[cfg(feature = "hosted")]
-pub(crate) fn is_valid_session_type_for_server_startup(session_type: &SessionType) -> bool {
-    matches!(session_type, SessionType::Singleplayer)
 }
 
 /// Validates transitions between ServerStartupStep states.
@@ -140,114 +131,71 @@ pub(crate) fn is_valid_startup_step_transition(
 
 fn on_server_startup_step(
     event: On<SetServerStartupStep>,
-    current_parent: Option<Res<State<ServerStatus>>>,
     current: Option<Res<State<ServerStartupStep>>>,
-    session_type: Res<State<SessionType>>,
     mut next_server_status: Option<ResMut<NextState<ServerStatus>>>,
     mut next_startup_step: Option<ResMut<NextState<ServerStartupStep>>>,
     mut next_session_type: ResMut<NextState<SessionType>>,
     #[cfg(feature = "hosted")] mut next_app_scope: ResMut<NextState<AppScope>>,
     #[cfg(feature = "headless")] mut exit_writer: MessageWriter<AppExit>,
 ) {
-    match *event.event() {
-        // Start: Wechselt ServerStatus zu Starting UND setzt Step auf Init
-        // Hier existiert noch kein ServerStartupStep (erst wenn Status = Starting)
-        SetServerStartupStep::Start => {
-            #[cfg(feature = "hosted")]
-            if !is_valid_session_type_for_server_startup(session_type.get()) {
-                warn!(
-                    "Server cannot start: SessionType {:?} is not valid. \
-                     Server startup requires a session initiated from the menu \
-                     (Singleplayer or Multiplayer Confirm).",
-                    session_type.get()
-                );
-                return;
-            }
-            // ServerStatus must be Offline to start
-            let status = match current_parent {
-                Some(ref s) => s.get(),
-                None => {
-                    warn!("ServerStatus does not exist - cannot start server");
-                    return;
-                }
-            };
-            if !is_valid_server_status_startup_transition(status, event.event()) {
-                warn!(
-                    "Invalid ServerStatus transition for Start: {:?}",
-                    status
-                );
-                return;
-            }
-            if let Some(ref mut next_status) = next_server_status {
-                next_status.set(ServerStatus::Starting);
-            }
+    // ServerStartupStep only exists when ServerStatus = Starting
+    let current = match current {
+        Some(c) => *c.get(),
+        None => {
+            warn!("ServerStartupStep does not exist - ServerStatus must be Starting first");
+            return;
+        }
+    };
+
+    if !is_valid_startup_step_transition(&current, event.event()) {
+        warn!(
+            "Invalid ServerStartupStep transition: {:?} -> {:?}",
+            current,
+            event.event()
+        );
+        return;
+    }
+
+    match (current, event.event()) {
+        (ServerStartupStep::Init, SetServerStartupStep::Next) => {
             if let Some(ref mut next_step) = next_startup_step {
-                next_step.set(ServerStartupStep::Init);
+                next_step.set(ServerStartupStep::LoadWorld);
             }
         }
-        // Next/Done/Failed: ServerStartupStep muss existieren (Status muss Starting sein)
-        _ => {
-            let current = match current {
-                Some(c) => *c.get(),
-                None => {
-                    warn!("ServerStartupStep does not exist - ServerStatus must be Starting first");
-                    return;
-                }
-            };
-
-            // Validate step transition
-            if !is_valid_startup_step_transition(&current, event.event()) {
-                warn!(
-                    "Invalid ServerStartupStep transition: {:?} -> {:?}",
-                    current,
-                    event.event()
-                );
-                return;
-            }
-
-            match (current, event.event()) {
-                (ServerStartupStep::Init, SetServerStartupStep::Next) => {
-                    if let Some(ref mut next_step) = next_startup_step {
-                        next_step.set(ServerStartupStep::LoadWorld);
-                    }
-                }
-                (ServerStartupStep::LoadWorld, SetServerStartupStep::Next) => {
-                    if let Some(ref mut next_step) = next_startup_step {
-                        next_step.set(ServerStartupStep::SpawnEntities);
-                    }
-                }
-                (ServerStartupStep::SpawnEntities, SetServerStartupStep::Next) => {
-                    if let Some(ref mut next_step) = next_startup_step {
-                        next_step.set(ServerStartupStep::Ready);
-                    }
-                }
-                (ServerStartupStep::Ready, SetServerStartupStep::Done) => {
-                    if let Some(ref mut s) = next_server_status {
-                        s.set(ServerStatus::Running);
-                    }
-                }
-                (_, SetServerStartupStep::Failed) => {
-                    if let Some(ref mut s) = next_server_status {
-                        s.set(ServerStatus::Offline);
-                    }
-
-                    #[cfg(feature = "hosted")]
-                    {
-                        next_session_type.set(SessionType::None);
-                        next_app_scope.set(AppScope::Menu);
-                        // TODO: Notification Error
-                    }
-                    #[cfg(feature = "headless")]
-                    {
-                        next_session_type.set(SessionType::None);
-                        exit_writer.write(AppExit::error());
-                        // TODO: Log Error
-                        // TODO: Proper Error Code in AppExit
-                    }
-                }
-                _ => {}
+        (ServerStartupStep::LoadWorld, SetServerStartupStep::Next) => {
+            if let Some(ref mut next_step) = next_startup_step {
+                next_step.set(ServerStartupStep::SpawnEntities);
             }
         }
+        (ServerStartupStep::SpawnEntities, SetServerStartupStep::Next) => {
+            if let Some(ref mut next_step) = next_startup_step {
+                next_step.set(ServerStartupStep::Ready);
+            }
+        }
+        (ServerStartupStep::Ready, SetServerStartupStep::Done) => {
+            if let Some(ref mut s) = next_server_status {
+                s.set(ServerStatus::Running);
+            }
+        }
+        (_, SetServerStartupStep::Failed) => {
+            #[cfg(feature = "hosted")]
+            {
+                if let Some(ref mut s) = next_server_status {
+                    s.set(ServerStatus::Offline);
+                }
+                next_session_type.set(SessionType::None);
+                next_app_scope.set(AppScope::Menu);
+                // TODO: Notification Error
+            }
+            #[cfg(feature = "headless")]
+            {
+                // No Offline state in headless — binary exits on failure
+                exit_writer.write(AppExit::error());
+                // TODO: Log Error
+                // TODO: Proper Error Code in AppExit
+            }
+        }
+        _ => {}
     }
 }
 
@@ -383,28 +331,28 @@ fn on_server_shutdown_step(
                 (ServerShutdownStep::Ready, SetServerShutdownStep::Done) => {
                     #[cfg(feature = "hosted")]
                     {
+                        next_server_status.set(ServerStatus::Offline);
                         next_session_type.set(SessionType::None);
                         next_app_scope.set(AppScope::Menu);
                     }
 
                     #[cfg(feature = "headless")]
                     {
-                        next_session_type.set(SessionType::None);
+                        // No Offline state in headless — binary exits on successful shutdown
                         exit_writer.write(AppExit::Success);
                     }
                 }
                 (_, SetServerShutdownStep::Failed) => {
-                    next_server_status.set(ServerStatus::Offline);
-
                     #[cfg(feature = "hosted")]
                     {
+                        next_server_status.set(ServerStatus::Offline);
                         next_session_type.set(SessionType::None);
                         next_app_scope.set(AppScope::Menu);
                         // TODO: Notification Error
                     }
                     #[cfg(feature = "headless")]
                     {
-                        next_session_type.set(SessionType::None);
+                        // No Offline state in headless — binary exits on failure
                         exit_writer.write(AppExit::error());
                         // TODO: Log Error
                         // TODO: Proper Error Code in AppExit
@@ -569,655 +517,86 @@ fn on_going_private_step(
 
 #[cfg(test)]
 mod tests {
-    //! Tests für die Server-Session Logik.
+    //! Validator-Tests für die Server-Session Logik.
     //!
-    //! Diese Tests prüfen:
-    //! 1. Validator-Funktionen (ob Übergänge gültig/ungültig sind)
-    //! 2. Observer-Logik (ob Events korrekt verarbeitet werden)
-    //! 3. SubState-Übergänge (ob die Schritte korrekt durchlaufen werden)
+    //! Observer- und Lifecycle-Tests befinden sich in:
+    //! - `tests/session_server/` (hosted)
+    //! - `tests/session_server_headless/` (headless)
 
-    // Importiere die States und Events aus dem Parent-Modul
     use crate::events::session::{
         SetGoingPrivateStep, SetGoingPublicStep, SetServerShutdownStep, SetServerStartupStep,
     };
     use crate::states::session::{ServerStatus, ServerVisibility};
 
-    mod helpers {
-        #[cfg(feature = "hosted")]
-        use crate::events::app::SetAppScope;
-        use crate::{
-            events::session::{
-                SetGoingPrivateStep, SetGoingPublicStep, SetServerShutdownStep,
-                SetServerStartupStep,
-            },
-            logic::{app::AppLogicPlugin, session::server::ServerSessionPlugin},
-            states::{
-                app::AppScope,
-                session::{
-                    GoingPrivateStep, GoingPublicStep, ServerShutdownStep, ServerStartupStep,
-                    ServerStatus, ServerVisibility, SessionState, SessionType,
-                },
-            },
-        };
-
-        use bevy::{prelude::*, state::app::StatesPlugin};
-
-        pub const STARTUP_STEPS: u8 = 3;
-        pub const SHUTDOWN_STEPS: u8 = 5;
-        pub const GOING_PUBLIC_STEPS: u8 = 3;
-        pub const GOING_PRIVATE_STEPS: u8 = 4;
-
-        pub fn test_app() -> App {
-            let mut app = App::new();
-            app.add_plugins((
-                MinimalPlugins,
-                StatesPlugin,
-                ServerSessionPlugin,
-                AppLogicPlugin,
-            ));
-
-            app
-        }
-
-        /// Runs the app for one update tick.
-        pub fn update_app(app: &mut App, i: u8) {
-            for _ in 0..i {
-                app.update();
-            }
-        }
-
-        pub fn setup_test_app(session_type: SessionType) -> App {
-            let mut app = test_app();
-            update_app(&mut app, 1);
-
-            #[cfg(feature = "hosted")]
-            {
-                let session_type_state = app.world().resource::<State<SessionType>>();
-                assert_eq!(session_type_state.get(), &SessionType::None);
-
-                let app_scope = app.world().resource::<State<AppScope>>();
-                assert_eq!(app_scope.get(), &AppScope::Splash);
-
-                app.world_mut().trigger(SetAppScope::Menu);
-                update_app(&mut app, 1);
-
-                app.world_mut().trigger(SetAppScope::Session);
-                update_app(&mut app, 1);
-
-                let app_scope = app.world().resource::<State<AppScope>>();
-                assert_eq!(app_scope.get(), &AppScope::Session);
-
-                let session_state = app.world().resource::<State<SessionState>>();
-                assert_eq!(session_state.get(), &SessionState::Setup);
-            }
-
-            #[cfg(feature = "hosted")]
-            if session_type != SessionType::None {
-                app.world_mut()
-                    .resource_mut::<NextState<SessionType>>()
-                    .set(session_type);
-                update_app(&mut app, 1);
-            }
-
-            #[cfg(feature = "headless")]
-            if session_type != SessionType::None {
-                app.world_mut()
-                    .resource_mut::<NextState<SessionType>>()
-                    .set(session_type);
-                update_app(&mut app, 1);
-            }
-
-            {
-                let session_type_state = app.world().resource::<State<SessionType>>();
-
-                assert_eq!(session_type_state.get(), &session_type);
-
-                let server_status = app.world().resource::<State<ServerStatus>>();
-                assert_eq!(server_status.get(), &ServerStatus::Offline);
-            }
-
-            {
-                app.world_mut().trigger(SetServerStartupStep::Start);
-                update_app(&mut app, 1);
-
-                let server_status = app.world().resource::<State<ServerStatus>>();
-                assert_eq!(server_status.get(), &ServerStatus::Starting);
-
-                let server_startup_step = app.world().resource::<State<ServerStartupStep>>();
-                assert_eq!(server_startup_step.get(), &ServerStartupStep::Init);
-            }
-
-            app
-        }
-
-        #[cfg(feature = "hosted")]
-        pub fn test_start_singleplayer() -> App {
-            let app = setup_test_app(SessionType::Singleplayer);
-            app
-        }
-
-        #[cfg(feature = "headless")]
-        pub fn test_start_dedicated_server() -> App {
-            let app = setup_test_app(SessionType::DedicatedServer);
-            app
-        }
-
-        pub fn start_server(app: &mut App) {
-            app.world_mut().trigger(SetServerStartupStep::Start);
-
-            update_app(app, 1);
-            let status = app.world().resource::<State<ServerStatus>>();
-            assert_eq!(status.get(), &ServerStatus::Starting);
-            let step = app.world().resource::<State<ServerStartupStep>>();
-            assert_eq!(step.get(), &ServerStartupStep::Init);
-        }
-
-        pub fn server_startup_next_step(app: &mut App, i: u8) {
-            for _ in 0..i {
-                app.world_mut().trigger(SetServerStartupStep::Next);
-                update_app(app, 1);
-            }
-
-            {
-                let step = app.world().resource::<State<ServerStartupStep>>();
-                assert_eq!(step.get(), &ServerStartupStep::Ready);
-                let state = app.world().resource::<State<ServerStatus>>();
-                assert_eq!(state.get(), &ServerStatus::Starting);
-            }
-
-            app.world_mut().trigger(SetServerStartupStep::Done);
-            update_app(app, 1);
-
-            {
-                let state_after_done = app.world().resource::<State<ServerStatus>>();
-                assert_eq!(state_after_done.get(), &ServerStatus::Running);
-                let server_visibility = app.world().resource::<State<ServerVisibility>>();
-                assert_eq!(server_visibility, &ServerVisibility::Private);
-            }
-        }
-
-        /// Führt den Startup-Prozess aus und wirft an einem bestimmten Step einen Fehler.
-        ///
-        /// - fail_at_step: Der Step bei dem das Failed-Event gesendet wird
-        ///   - 0 = Failed sofort nach Start
-        ///   - 1 = Failed nach einem Next
-        ///   - 2 = Failed nach zwei Nexts
-        pub fn server_startup_fail_at_step(app: &mut App, fail_at_step: u8) {
-            println!("Failure Step : {:?}", fail_at_step);
-
-            for _ in 0..fail_at_step {
-                app.world_mut().trigger(SetServerStartupStep::Next);
-                update_app(app, 1);
-            }
-
-            app.world_mut().trigger(SetServerStartupStep::Failed);
-            update_app(app, 1);
-
-            let session_type = app.world().resource::<State<SessionType>>();
-            assert_eq!(session_type.get(), &SessionType::None);
-        }
-
-        pub fn start_shutdown(app: &mut App) {
-            {
-                app.world_mut().trigger(SetServerShutdownStep::Start);
-                update_app(app, 1);
-
-                let server_status = app.world().resource::<State<ServerStatus>>();
-                assert_eq!(server_status.get(), &ServerStatus::Stopping);
-
-                let server_shutdown_step = app.world().resource::<State<ServerShutdownStep>>();
-                assert_eq!(server_shutdown_step.get(), &ServerShutdownStep::SaveWorld);
-            }
-        }
-
-        pub fn server_shutdown_next_step(app: &mut App, i: u8) {
-            for _ in 0..i {
-                app.world_mut().trigger(SetServerShutdownStep::Next);
-                update_app(app, 1);
-            }
-
-            {
-                let step = app.world().resource::<State<ServerShutdownStep>>();
-                assert_eq!(step.get(), &ServerShutdownStep::Ready);
-                let state = app.world().resource::<State<ServerStatus>>();
-                assert_eq!(state.get(), &ServerStatus::Stopping);
-            }
-
-            app.world_mut().trigger(SetServerShutdownStep::Done);
-            update_app(app, 1);
-
-            {
-                #[cfg(feature = "hosted")]
-                {
-                    let session_type = app.world().resource::<State<SessionType>>();
-                    assert_eq!(session_type.get(), &SessionType::None);
-
-                    let app_scope = app.world().resource::<State<AppScope>>();
-                    assert_eq!(app_scope.get(), &AppScope::Menu);
-                }
-
-                #[cfg(feature = "headless")]
-                {
-                    update_app(app, 10);
-                    let session_type = app.world().resource::<State<SessionType>>();
-                    assert_eq!(session_type.get(), &SessionType::None);
-                }
-            }
-        }
-
-        pub fn server_shutdown_fail_at_step(app: &mut App, fail_at_step: u8) {
-            println!("Failure Step : {:?}", fail_at_step);
-            for _ in 0..fail_at_step {
-                app.world_mut().trigger(SetServerShutdownStep::Next);
-                update_app(app, 1);
-            }
-
-            app.world_mut().trigger(SetServerShutdownStep::Failed);
-            update_app(app, 1);
-
-            let session_type = app.world().resource::<State<SessionType>>();
-            assert_eq!(session_type.get(), &SessionType::None);
-        }
-
-        pub fn server_goging_public(app: &mut App) {
-            app.world_mut().trigger(SetGoingPublicStep::Start);
-            update_app(app, 1);
-
-            let server_visibilty = app.world().resource::<State<ServerVisibility>>();
-            assert_eq!(server_visibilty.get(), &ServerVisibility::GoingPublic);
-            let step = app.world().resource::<State<GoingPublicStep>>();
-            assert_eq!(step.get(), &GoingPublicStep::Validating);
-        }
-
-        pub fn server_goging_public_next_step(app: &mut App, i: u8) {
-            for _ in 0..i {
-                app.world_mut().trigger(SetGoingPublicStep::Next);
-                update_app(app, 1);
-            }
-
-            let step = app.world().resource::<State<GoingPublicStep>>();
-            assert_eq!(step.get(), &GoingPublicStep::Ready);
-            let server_visibility = app.world().resource::<State<ServerVisibility>>();
-            assert_eq!(server_visibility.get(), &ServerVisibility::GoingPublic);
-
-            app.world_mut().trigger(SetGoingPublicStep::Done);
-            update_app(app, 1);
-
-            let server_visibility = app.world().resource::<State<ServerVisibility>>();
-            assert_eq!(server_visibility.get(), &ServerVisibility::Public);
-        }
-
-        pub fn server_goging_private(app: &mut App) {
-            app.world_mut().trigger(SetGoingPrivateStep::Start);
-            update_app(app, 1);
-
-            let server_visibilty = app.world().resource::<State<ServerVisibility>>();
-            assert_eq!(server_visibilty.get(), &ServerVisibility::GoingPrivate);
-            let step = app.world().resource::<State<GoingPrivateStep>>();
-            assert_eq!(step.get(), &GoingPrivateStep::DisconnectingClients);
-        }
-
-        pub fn server_goging_private_next_step(app: &mut App, i: u8) {
-            for _ in 0..i {
-                app.world_mut().trigger(SetGoingPrivateStep::Next);
-                update_app(app, 1);
-            }
-
-            let step = app.world().resource::<State<GoingPrivateStep>>();
-            assert_eq!(step.get(), &GoingPrivateStep::Ready);
-
-            let server_visibility = app.world().resource::<State<ServerVisibility>>();
-            assert_eq!(server_visibility.get(), &ServerVisibility::GoingPrivate);
-
-            app.world_mut().trigger(SetGoingPrivateStep::Done);
-            update_app(app, 1);
-
-            let server_visibility = app.world().resource::<State<ServerVisibility>>();
-            assert_eq!(server_visibility.get(), &ServerVisibility::Private);
-        }
-
-        /// Führt den Going-Public-Prozess aus und wirft an einem bestimmten Step einen Fehler.
-        ///
-        /// - fail_at_step: Der Step bei dem das Failed-Event gesendet wird
-        ///   - 0 = Failed sofort nach Start (bei Validating)
-        ///   - 1 = Failed nach einem Next (bei StartingServer)
-        ///   - 2 = Failed nach zwei Nexts (bei StartingDiscovery)
-        pub fn server_going_public_fail_at_step(app: &mut App, fail_at_step: u8) {
-            println!("Going Public Failure Step: {:?}", fail_at_step);
-
-            for _ in 0..fail_at_step {
-                app.world_mut().trigger(SetGoingPublicStep::Next);
-                update_app(app, 1);
-            }
-
-            app.world_mut().trigger(SetGoingPublicStep::Failed);
-            update_app(app, 1);
-
-            // Nach einem Failure sollte der Server wieder Private sein
-            let server_visibility = app.world().resource::<State<ServerVisibility>>();
-            assert_eq!(server_visibility.get(), &ServerVisibility::Private);
-        }
-
-        /// Führt den Going-Private-Prozess aus und wirft an einem bestimmten Step einen Fehler.
-        ///
-        /// - fail_at_step: Der Step bei dem das Failed-Event gesendet wird
-        ///   - 0 = Failed sofort nach Start (bei DisconnectingClients)
-        ///   - 1 = Failed nach einem Next (bei ClosingServer)
-        ///   - 2 = Failed nach zwei Nexts (bei Cleanup)
-        pub fn server_going_private_fail_at_step(app: &mut App, fail_at_step: u8) {
-            println!("Going Private Failure Step: {:?}", fail_at_step);
-
-            for _ in 0..fail_at_step {
-                app.world_mut().trigger(SetGoingPrivateStep::Next);
-                update_app(app, 1);
-            }
-
-            app.world_mut().trigger(SetGoingPrivateStep::Failed);
-            update_app(app, 1);
-
-            // Nach einem Failure sollte der Server wieder Private sein
-            let server_visibility = app.world().resource::<State<ServerVisibility>>();
-            assert_eq!(server_visibility.get(), &ServerVisibility::Private);
-        }
-    }
-
-    // =============================================================================
-    // TESTS FÜR SERVER STARTUP STEP
-    // =============================================================================
-
-    mod startup_step_tests {
-
-        use super::*;
-
-        /// Test: ServerStartupStep::Start wechselt zu Init.
-        #[test]
-        fn test_start_singleplayer() {
-            #[cfg(feature = "hosted")]
-            let mut app = helpers::test_start_singleplayer();
-
-            #[cfg(feature = "headless")]
-            let mut app = helpers::test_start_dedicated_server();
-
-            helpers::start_server(&mut app);
-            helpers::server_startup_next_step(&mut app, helpers::STARTUP_STEPS);
-        }
-
-        /// Test: ServerStartup Failure bei verschiedenen Steps
-        ///
-        /// Testet, dass der Server bei einem Failed-Event korrekt zu Offline wechselt,
-        /// unabhängig davon, bei welchem Step das Failure auftritt.
-        #[test]
-        fn test_server_startup_failure() {
-            for step in 0..helpers::STARTUP_STEPS {
-                #[cfg(feature = "hosted")]
-                let mut app = helpers::test_start_singleplayer();
-                #[cfg(feature = "headless")]
-                let mut app = helpers::test_start_dedicated_server();
-                helpers::start_server(&mut app);
-                // Failed sofort nach Start
-                helpers::server_startup_fail_at_step(&mut app, step);
-            }
-        }
-    }
-
-    // =============================================================================
-    // TESTS FÜR SERVER SHUTDOWN STEP
-    // =============================================================================
-
-    mod shutdown_step_tests {
-        use super::*;
-
-        /// Test: ServerShutdownStep::Start wechselt zu SaveWorld.
-        #[test]
-        fn test_shutdown() {
-            #[cfg(feature = "hosted")]
-            let mut app = helpers::test_start_singleplayer();
-
-            #[cfg(feature = "headless")]
-            let mut app = helpers::test_start_dedicated_server();
-
-            helpers::start_server(&mut app);
-            helpers::server_startup_next_step(&mut app, helpers::STARTUP_STEPS);
-
-            helpers::start_shutdown(&mut app);
-            helpers::server_shutdown_next_step(&mut app, helpers::SHUTDOWN_STEPS);
-        }
-
-        #[test]
-        fn test_shutdown_failure() {
-            for step in 0..helpers::SHUTDOWN_STEPS {
-                #[cfg(feature = "hosted")]
-                let mut app = helpers::test_start_singleplayer();
-
-                #[cfg(feature = "headless")]
-                let mut app = helpers::test_start_dedicated_server();
-
-                helpers::start_server(&mut app);
-                helpers::server_startup_next_step(&mut app, helpers::STARTUP_STEPS);
-
-                helpers::start_shutdown(&mut app);
-                helpers::server_shutdown_fail_at_step(&mut app, step);
-            }
-        }
-    }
-
-    // =============================================================================
-    // TESTS FÜR SERVER VISIBILITY
-    // =============================================================================
-
-    mod visibility_tests {
-
-        use super::*;
-
-        #[test]
-        fn test_going_public() {
-            #[cfg(feature = "hosted")]
-            let mut app = helpers::test_start_singleplayer();
-            #[cfg(feature = "headless")]
-            let mut app = helpers::test_start_dedicated_server();
-            helpers::start_server(&mut app);
-            helpers::server_startup_next_step(&mut app, helpers::STARTUP_STEPS);
-
-            helpers::server_goging_public(&mut app);
-            helpers::server_goging_public_next_step(&mut app, helpers::GOING_PUBLIC_STEPS);
-        }
-
-        #[test]
-        fn test_going_private() {
-            #[cfg(feature = "hosted")]
-            let mut app = helpers::test_start_singleplayer();
-            #[cfg(feature = "headless")]
-            let mut app = helpers::test_start_dedicated_server();
-            helpers::server_startup_next_step(&mut app, helpers::STARTUP_STEPS);
-
-            helpers::server_goging_public(&mut app);
-            helpers::server_goging_public_next_step(&mut app, helpers::GOING_PUBLIC_STEPS);
-
-            helpers::server_goging_private(&mut app);
-            helpers::server_goging_private_next_step(&mut app, helpers::GOING_PRIVATE_STEPS);
-        }
-
-        /// Test: Going-Public-Prozess kann an verschiedenen Steps fehlschlagen.
-        ///
-        /// Testet, dass der Server bei einem Failed-Event korrekt zu Private wechselt,
-        /// unabhängig davon, bei welchem Step das Failure auftritt.
-        #[test]
-        fn test_going_public_failure() {
-            for step in 0..helpers::GOING_PUBLIC_STEPS {
-                #[cfg(feature = "hosted")]
-                let mut app = helpers::test_start_singleplayer();
-                #[cfg(feature = "headless")]
-                let mut app = helpers::test_start_dedicated_server();
-                helpers::start_server(&mut app);
-                helpers::server_startup_next_step(&mut app, helpers::STARTUP_STEPS);
-
-                helpers::server_goging_public(&mut app);
-                helpers::server_going_public_fail_at_step(&mut app, step);
-            }
-        }
-
-        /// Test: Going-Private-Prozess kann an verschiedenen Steps fehlschlagen.
-        ///
-        /// Testet, dass der Server bei einem Failed-Event korrekt zu Private wechselt,
-        /// unabhängig davon, bei welchem Step das Failure auftritt.
-        #[test]
-        fn test_going_private_failure() {
-            for step in 0..helpers::GOING_PRIVATE_STEPS {
-                #[cfg(feature = "hosted")]
-                let mut app = helpers::test_start_singleplayer();
-                #[cfg(feature = "headless")]
-                let mut app = helpers::test_start_dedicated_server();
-                helpers::start_server(&mut app);
-                helpers::server_startup_next_step(&mut app, helpers::STARTUP_STEPS);
-
-                // Server muss erst public sein, um private zu werden
-                helpers::server_goging_public(&mut app);
-                helpers::server_goging_public_next_step(&mut app, helpers::GOING_PUBLIC_STEPS);
-
-                helpers::server_goging_private(&mut app);
-                helpers::server_going_private_fail_at_step(&mut app, step);
-            }
-        }
-    }
-
-    // =============================================================================
-    // INTEGRATIONSTEST: KOMPLETTER SERVER LIFECYCLE
-    // =============================================================================
-
-    mod integration_tests {
-        use super::*;
-
-        /// Test: Kompletter Server-Lebenszyklus.
-        /// Offline -> Starting -> Running -> Going public -> Public -> Going private -> Stopping -> Offline
-        #[test]
-        fn test_full_server_lifecycle() {
-            #[cfg(feature = "hosted")]
-            let mut app = helpers::test_start_singleplayer();
-            #[cfg(feature = "headless")]
-            let mut app = helpers::test_start_dedicated_server();
-            helpers::server_startup_next_step(&mut app, helpers::STARTUP_STEPS);
-
-            helpers::server_goging_public(&mut app);
-            helpers::server_goging_public_next_step(&mut app, helpers::GOING_PUBLIC_STEPS);
-
-            helpers::server_goging_private(&mut app);
-            helpers::server_goging_private_next_step(&mut app, helpers::GOING_PRIVATE_STEPS);
-
-            helpers::start_shutdown(&mut app);
-            helpers::server_shutdown_next_step(&mut app, helpers::SHUTDOWN_STEPS);
-        }
-    }
-    // =============================================================================
-    // TESTS FÜR VALIDATOR-FUNKTIONEN
-    // =============================================================================
-
     mod validator_tests {
         use super::*;
 
-        // Importiere alle Validator-Funktionen
         use super::super::is_valid_server_status_shutdown_transition;
         use super::super::is_valid_server_status_startup_transition;
         use super::super::is_valid_server_visibility_private_transition;
         use super::super::is_valid_server_visibility_public_transition;
 
-        /// Test: Gültige ServerStatus-Startup-Übergänge werden als gültig erkannt.
-        ///
-        /// ServerStatus::Starting kann zu:
-        /// - Next (fortschreiten im Startup)
-        /// - Done (Startup erfolgreich abgeschlossen)
-        /// - Failed (Startup fehlgeschlagen)
+        /// Gültige ServerStatus-Startup-Übergänge.
         #[test]
         fn test_valid_server_status_startup_transitions() {
-            // Starting → Next ist gültig (fortschreiten)
             assert!(is_valid_server_status_startup_transition(
                 &ServerStatus::Starting,
                 &SetServerStartupStep::Next
             ));
-
-            // Starting → Done ist gültig (erfolgreich abgeschlossen)
             assert!(is_valid_server_status_startup_transition(
                 &ServerStatus::Starting,
                 &SetServerStartupStep::Done
             ));
-
-            // Starting → Failed ist gültig (fehlgeschlagen)
             assert!(is_valid_server_status_startup_transition(
                 &ServerStatus::Starting,
                 &SetServerStartupStep::Failed
             ));
-
-            // Offline → Start ist gültig (Server starten)
-            assert!(is_valid_server_status_startup_transition(
-                &ServerStatus::Offline,
-                &SetServerStartupStep::Start
-            ));
         }
 
-        /// Test: Ungültige ServerStatus-Startup-Übergänge werden blockiert.
+        /// Ungültige ServerStatus-Startup-Übergänge werden blockiert.
         #[test]
         fn test_invalid_server_status_startup_transitions() {
-            // Running → Start ist ungültig (Server läuft bereits)
+            // Running → Next ist ungültig (Server läuft bereits)
             assert!(!is_valid_server_status_startup_transition(
                 &ServerStatus::Running,
-                &SetServerStartupStep::Start
+                &SetServerStartupStep::Next
             ));
-
-            // Stopping → Start ist ungültig (Server wird heruntergefahren)
+            // Stopping → Done ist ungültig (Server wird heruntergefahren)
             assert!(!is_valid_server_status_startup_transition(
                 &ServerStatus::Stopping,
-                &SetServerStartupStep::Start
-            ));
-
-            // Starting → Start ist ungültig (Server startet bereits)
-            assert!(!is_valid_server_status_startup_transition(
-                &ServerStatus::Starting,
-                &SetServerStartupStep::Start
+                &SetServerStartupStep::Done
             ));
         }
 
-        /// Test: Gültige ServerStatus-Shutdown-Übergänge werden als gültig erkannt.
+        /// Gültige ServerStatus-Shutdown-Übergänge.
         #[test]
         fn test_valid_server_status_shutdown_transitions() {
-            // Running → Start ist gültig (Server herunterfahren)
             assert!(is_valid_server_status_shutdown_transition(
                 &ServerStatus::Running,
                 &SetServerShutdownStep::Start
             ));
-
-            // Stopping → Next ist gültig (fortschreiten)
             assert!(is_valid_server_status_shutdown_transition(
                 &ServerStatus::Stopping,
                 &SetServerShutdownStep::Next
             ));
-
-            // Stopping → Done ist gültig (erfolgreich heruntergefahren)
             assert!(is_valid_server_status_shutdown_transition(
                 &ServerStatus::Stopping,
                 &SetServerShutdownStep::Done
             ));
-
-            // Stopping → Failed ist gültig (Fehler beim Herunterfahren)
             assert!(is_valid_server_status_shutdown_transition(
                 &ServerStatus::Stopping,
                 &SetServerShutdownStep::Failed
             ));
         }
 
-        /// Test: Ungültige ServerStatus-Shutdown-Übergänge werden blockiert.
+        /// Ungültige ServerStatus-Shutdown-Übergänge werden blockiert.
         #[test]
         fn test_invalid_server_status_shutdown_transitions() {
-            // Offline → Start ist ungültig (Server ist nicht gestartet)
-            assert!(!is_valid_server_status_shutdown_transition(
-                &ServerStatus::Offline,
-                &SetServerShutdownStep::Start
-            ));
-
             // Starting → Start ist ungültig (Server startet noch)
             assert!(!is_valid_server_status_shutdown_transition(
                 &ServerStatus::Starting,
                 &SetServerShutdownStep::Start
             ));
-
             // Stopping → Start ist ungültig (Server wird bereits heruntergefahren)
             assert!(!is_valid_server_status_shutdown_transition(
                 &ServerStatus::Stopping,
@@ -1225,88 +604,68 @@ mod tests {
             ));
         }
 
-        /// Test: Gültige GoingPublic-Übergänge werden als gültig erkannt.
+        /// Gültige GoingPublic-Übergänge.
         #[test]
         fn test_valid_going_public_transitions() {
-            // Private → Start ist gültig (Server soll public werden)
             assert!(is_valid_server_visibility_public_transition(
                 &ServerVisibility::Private,
                 &SetGoingPublicStep::Start
             ));
-
-            // GoingPublic → Next ist gültig (fortschreiten)
             assert!(is_valid_server_visibility_public_transition(
                 &ServerVisibility::GoingPublic,
                 &SetGoingPublicStep::Next
             ));
-
-            // GoingPublic → Done ist gültig (erfolgreich public geworden)
             assert!(is_valid_server_visibility_public_transition(
                 &ServerVisibility::GoingPublic,
                 &SetGoingPublicStep::Done
             ));
-
-            // GoingPublic → Failed ist gültig (Fehler beim public machen)
             assert!(is_valid_server_visibility_public_transition(
                 &ServerVisibility::GoingPublic,
                 &SetGoingPublicStep::Failed
             ));
         }
 
-        /// Test: Ungültige GoingPublic-Übergänge werden blockiert.
+        /// Ungültige GoingPublic-Übergänge werden blockiert.
         #[test]
         fn test_invalid_going_public_transitions() {
-            // Public → Start ist ungültig (Server ist bereits public)
             assert!(!is_valid_server_visibility_public_transition(
                 &ServerVisibility::Public,
                 &SetGoingPublicStep::Start
             ));
-
-            // GoingPrivate → Start ist ungültig (Server wird bereits private)
             assert!(!is_valid_server_visibility_public_transition(
                 &ServerVisibility::GoingPrivate,
                 &SetGoingPublicStep::Start
             ));
         }
 
-        /// Test: Gültige GoingPrivate-Übergänge werden als gültig erkannt.
+        /// Gültige GoingPrivate-Übergänge.
         #[test]
         fn test_valid_going_private_transitions() {
-            // Public → Start ist gültig (Server soll private werden)
             assert!(is_valid_server_visibility_private_transition(
                 &ServerVisibility::Public,
                 &SetGoingPrivateStep::Start
             ));
-
-            // GoingPrivate → Next ist gültig (fortschreiten)
             assert!(is_valid_server_visibility_private_transition(
                 &ServerVisibility::GoingPrivate,
                 &SetGoingPrivateStep::Next
             ));
-
-            // GoingPrivate → Done ist gültig (erfolgreich private geworden)
             assert!(is_valid_server_visibility_private_transition(
                 &ServerVisibility::GoingPrivate,
                 &SetGoingPrivateStep::Done
             ));
-
-            // GoingPrivate → Failed ist gültig
             assert!(is_valid_server_visibility_private_transition(
                 &ServerVisibility::GoingPrivate,
                 &SetGoingPrivateStep::Failed
             ));
         }
 
-        /// Test: Ungültige GoingPrivate-Übergänge werden blockiert.
+        /// Ungültige GoingPrivate-Übergänge werden blockiert.
         #[test]
         fn test_invalid_going_private_transitions() {
-            // Private → Start ist ungültig (Server ist bereits private)
             assert!(!is_valid_server_visibility_private_transition(
                 &ServerVisibility::Private,
                 &SetGoingPrivateStep::Start
             ));
-
-            // GoingPublic → Start ist ungültig (Server wird bereits public)
             assert!(!is_valid_server_visibility_private_transition(
                 &ServerVisibility::GoingPublic,
                 &SetGoingPrivateStep::Start

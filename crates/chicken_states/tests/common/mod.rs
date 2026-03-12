@@ -1,23 +1,27 @@
 use bevy::{prelude::*, state::app::StatesPlugin};
 use chicken_states::{
+    states::{
+        app::AppScope,
+        session::{ServerStartupStep, ServerStatus, SessionType},
+    },
     ChickenStatePlugin,
+};
+
+#[cfg(feature = "hosted")]
+use chicken_states::{
     events::menu::{
         multiplayer::SetMultiplayerMenu, settings::SetSettingsMenu,
         singleplayer::SetSingleplayerMenu,
     },
-    states::{
-        app::AppScope,
-        menu::{
-            main::MainMenuScreen,
-            multiplayer::{
-                HostNewGameMenuScreen, HostSavedGameMenuScreen, JoinGameMenuScreen,
-                MultiplayerMenuScreen,
-            },
-            settings::SettingsMenuScreen,
-            singleplayer::{NewGameMenuScreen, SavedGameMenuScreen, SingleplayerMenuScreen},
-            wiki::WikiMenuScreen,
+    states::menu::{
+        main::MainMenuScreen,
+        multiplayer::{
+            HostNewGameMenuScreen, HostSavedGameMenuScreen, JoinGameMenuScreen,
+            MultiplayerMenuScreen,
         },
-        session::{ServerStartupStep, ServerStatus, SessionType},
+        settings::SettingsMenuScreen,
+        singleplayer::{NewGameMenuScreen, SavedGameMenuScreen, SingleplayerMenuScreen},
+        wiki::WikiMenuScreen,
     },
 };
 
@@ -27,6 +31,7 @@ use chicken_states::{
     events::session::{SetConnectingStep, SetServerStartupStep, SetSyncingStep},
     states::session::{ClientConnectionStatus, ConnectingStep, SyncingStep},
 };
+
 
 pub fn test_app() -> App {
     let mut app = App::new();
@@ -124,6 +129,7 @@ pub fn setup_test_app_in_settings() -> App {
 }
 
 /// Setup helper: Sets MainMenuScreen to Multiplayer and MultiplayerMenuScreen to Overview.
+#[cfg(feature = "hosted")]
 pub fn setup_test_app_in_multiplayer_overview() -> App {
     let mut app = setup_test_app_hosted();
 
@@ -137,6 +143,7 @@ pub fn setup_test_app_in_multiplayer_overview() -> App {
 }
 
 /// Setup helper: Sets MultiplayerMenuScreen to HostNewGame with ConfigServer screen.
+#[cfg(feature = "hosted")]
 pub fn setup_test_app_in_host_new_game() -> App {
     let mut app = setup_test_app_in_multiplayer_overview();
 
@@ -150,6 +157,7 @@ pub fn setup_test_app_in_host_new_game() -> App {
 }
 
 /// Setup helper: Sets MultiplayerMenuScreen to HostSavedGame.
+#[cfg(feature = "hosted")]
 pub fn setup_test_app_in_host_saved_game() -> App {
     let mut app = setup_test_app_in_multiplayer_overview();
 
@@ -164,6 +172,7 @@ pub fn setup_test_app_in_host_saved_game() -> App {
 }
 
 /// Setup helper: Sets MultiplayerMenuScreen to JoinGame.
+#[cfg(feature = "hosted")]
 pub fn setup_test_app_in_join_game() -> App {
     let mut app = setup_test_app_in_multiplayer_overview();
 
@@ -178,7 +187,8 @@ pub fn setup_test_app_in_join_game() -> App {
     app
 }
 
-/// Setup for tests with headless feature: Starts directly in Session.
+/// Setup for tests with headless feature: Starts directly in Session + Starting.
+/// No Offline state exists in headless — the server starts in Starting::Init by default.
 #[cfg(feature = "headless")]
 pub fn setup_test_app_headless() -> App {
     let mut app = test_app();
@@ -186,6 +196,29 @@ pub fn setup_test_app_headless() -> App {
 
     assert_app_scope(&mut app, AppScope::Session);
     assert_session_type(&mut app, SessionType::DedicatedServer);
+    assert_server_status(&mut app, ServerStatus::Starting);
+    assert_server_startup_step(&mut app, ServerStartupStep::Init);
+
+    app
+}
+
+/// Setup helper: Starts headless app and advances through all startup steps until ServerStatus::Running.
+/// No Start trigger needed — headless defaults to Starting::Init immediately.
+#[cfg(feature = "headless")]
+pub fn setup_test_app_headless_running() -> App {
+    use chicken_states::events::session::SetServerStartupStep;
+
+    let mut app = setup_test_app_headless();
+
+    // App is already in Starting::Init — advance through all startup steps
+    for _ in 0..SERVER_STARTUP_STEPS {
+        app.world_mut().trigger(SetServerStartupStep::Next);
+        update_app(&mut app, 1);
+    }
+    app.world_mut().trigger(SetServerStartupStep::Done);
+    update_app(&mut app, 1);
+
+    assert_server_status(&mut app, ServerStatus::Running);
 
     app
 }
@@ -202,78 +235,90 @@ pub fn assert_app_scope(app: &mut App, expected: AppScope) {
     assert_eq!(app_scope.get(), &expected);
 }
 
-/// Asserts that WikiMenuScreen state matches expected value.
-pub fn assert_wiki_state(app: &mut App, expected: WikiMenuScreen) {
-    let wiki = app.world().resource::<State<WikiMenuScreen>>();
-    assert_eq!(wiki.get(), &expected);
-}
-
-/// Asserts that MainMenuScreen state matches expected value.
-pub fn assert_main_menu_state(app: &mut App, expected: MainMenuScreen) {
-    let main = app.world().resource::<State<MainMenuScreen>>();
-    assert_eq!(main.get(), &expected);
-}
-
-/// Asserts that SingleplayerMenuScreen state matches expected value.
-pub fn assert_setup_state(app: &mut App, expected: SingleplayerMenuScreen) {
-    let setup = app.world().resource::<State<SingleplayerMenuScreen>>();
-    assert_eq!(setup.get(), &expected);
-}
-
-/// Asserts that MainMenuScreen state matches expected value.
-pub fn assert_main_menu_screen(app: &mut App, expected: MainMenuScreen) {
-    let context = app.world().resource::<State<MainMenuScreen>>();
-    assert_eq!(context.get(), &expected);
-}
-
-/// Asserts that NewGameMenuScreen state matches expected value.
-pub fn assert_new_game_screen(app: &mut App, expected: NewGameMenuScreen) {
-    let screen = app.world().resource::<State<NewGameMenuScreen>>();
-    assert_eq!(screen.get(), &expected);
-}
-
-/// Asserts that SavedGameMenuScreen state matches expected value.
-pub fn assert_load_game_screen(app: &mut App, expected: SavedGameMenuScreen) {
-    let screen = app.world().resource::<State<SavedGameMenuScreen>>();
-    assert_eq!(screen.get(), &expected);
-}
-
 /// Asserts that ServerStatus state matches expected value.
 pub fn assert_server_status(app: &mut App, expected: ServerStatus) {
     let status = app.world().resource::<State<ServerStatus>>();
     assert_eq!(status.get(), &expected);
 }
 
+/// Asserts that WikiMenuScreen state matches expected value.
+#[cfg(feature = "hosted")]
+pub fn assert_wiki_state(app: &mut App, expected: WikiMenuScreen) {
+    let wiki = app.world().resource::<State<WikiMenuScreen>>();
+    assert_eq!(wiki.get(), &expected);
+}
+
+/// Asserts that MainMenuScreen state matches expected value.
+#[cfg(feature = "hosted")]
+pub fn assert_main_menu_state(app: &mut App, expected: MainMenuScreen) {
+    let main = app.world().resource::<State<MainMenuScreen>>();
+    assert_eq!(main.get(), &expected);
+}
+
+/// Asserts that SingleplayerMenuScreen state matches expected value.
+#[cfg(feature = "hosted")]
+pub fn assert_setup_state(app: &mut App, expected: SingleplayerMenuScreen) {
+    let setup = app.world().resource::<State<SingleplayerMenuScreen>>();
+    assert_eq!(setup.get(), &expected);
+}
+
+/// Asserts that MainMenuScreen state matches expected value.
+#[cfg(feature = "hosted")]
+pub fn assert_main_menu_screen(app: &mut App, expected: MainMenuScreen) {
+    let context = app.world().resource::<State<MainMenuScreen>>();
+    assert_eq!(context.get(), &expected);
+}
+
+/// Asserts that NewGameMenuScreen state matches expected value.
+#[cfg(feature = "hosted")]
+pub fn assert_new_game_screen(app: &mut App, expected: NewGameMenuScreen) {
+    let screen = app.world().resource::<State<NewGameMenuScreen>>();
+    assert_eq!(screen.get(), &expected);
+}
+
+/// Asserts that SavedGameMenuScreen state matches expected value.
+#[cfg(feature = "hosted")]
+pub fn assert_load_game_screen(app: &mut App, expected: SavedGameMenuScreen) {
+    let screen = app.world().resource::<State<SavedGameMenuScreen>>();
+    assert_eq!(screen.get(), &expected);
+}
+
+#[cfg(feature = "hosted")]
 pub fn assert_singleplayer_menu_screen(app: &mut App, expected: SingleplayerMenuScreen) {
     let screen = app.world().resource::<State<SingleplayerMenuScreen>>();
     assert_eq!(screen.get(), &expected);
 }
 
 /// Asserts that SettingsMenuScreen state matches expected value.
+#[cfg(feature = "hosted")]
 pub fn assert_settings_screen(app: &mut App, expected: SettingsMenuScreen) {
     let settings_state = app.world().resource::<State<SettingsMenuScreen>>();
     assert_eq!(settings_state.get(), &expected);
 }
 
 /// Asserts that MultiplayerMenuScreen state matches expected value.
+#[cfg(feature = "hosted")]
 pub fn assert_multiplayer_screen(app: &mut App, expected: MultiplayerMenuScreen) {
     let setup = app.world().resource::<State<MultiplayerMenuScreen>>();
     assert_eq!(setup.get(), &expected);
 }
 
 /// Asserts that HostNewGameMenuScreen state matches expected value.
+#[cfg(feature = "hosted")]
 pub fn assert_host_new_game_screen(app: &mut App, expected: HostNewGameMenuScreen) {
     let screen = app.world().resource::<State<HostNewGameMenuScreen>>();
     assert_eq!(screen.get(), &expected);
 }
 
 /// Asserts that HostSavedGameMenuScreen state matches expected value.
+#[cfg(feature = "hosted")]
 pub fn assert_host_saved_game_screen(app: &mut App, expected: HostSavedGameMenuScreen) {
     let screen = app.world().resource::<State<HostSavedGameMenuScreen>>();
     assert_eq!(screen.get(), &expected);
 }
 
 /// Asserts that JoinGameMenuScreen state matches expected value.
+#[cfg(feature = "hosted")]
 pub fn assert_join_game_screen(app: &mut App, expected: JoinGameMenuScreen) {
     let screen = app.world().resource::<State<JoinGameMenuScreen>>();
     assert_eq!(screen.get(), &expected);
@@ -287,6 +332,8 @@ pub fn assert_join_game_screen(app: &mut App, expected: JoinGameMenuScreen) {
 pub const SERVER_STARTUP_STEPS: u8 = 3;
 /// Number of Next steps to reach Ready during server shutdown.
 pub const SERVER_SHUTDOWN_STEPS: u8 = 5;
+/// Number of Next steps to reach Ready during server shutdown (headless: no DespawnLocalClient).
+pub const SERVER_SHUTDOWN_STEPS_HEADLESS: u8 = 4;
 /// Number of Next steps to reach Ready during going-public.
 pub const SERVER_GOING_PUBLIC_STEPS: u8 = 3;
 /// Number of Next steps to reach Ready during going-private.
@@ -491,8 +538,7 @@ pub fn client_disconnect_complete(app: &mut App) {
     update_app(app, 1);
 
     for _ in 0..CLIENT_DISCONNECTING_STEPS {
-        app.world_mut()
-            .trigger(SetDisconnectingStep::Next);
+        app.world_mut().trigger(SetDisconnectingStep::Next);
         update_app(app, 1);
     }
     app.world_mut().trigger(SetDisconnectingStep::Done);

@@ -19,10 +19,13 @@ pub enum SetPauseMenu {
 }
 
 /// Events for controlling the server startup sequence.
+///
+/// Note: There is no `Start` variant. For `hosted` builds, startup is initiated by
+/// `SetJoinGame::Confirm` / Multiplayer Confirm (sets `ServerStatus::Starting` directly).
+/// For `headless` builds, the server starts in `ServerStatus::Starting` by default
+/// when `SessionType::DedicatedServer` becomes active.
 #[derive(Event, Debug, Clone, Copy)]
 pub enum SetServerStartupStep {
-    /// Initiate the startup process.
-    Start,
     /// Proceed to the next startup step.
     Next,
     /// Startup process complete.

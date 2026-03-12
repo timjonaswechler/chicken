@@ -91,16 +91,17 @@ pub enum ServerStatus {
 /// Tracks the lifecycle state of a server session.
 ///
 /// This state machine manages the startup, active gameplay, and shutdown phases
-/// of both singleplayer (local) and dedicated server sessions.
-/// Active when `SessionType` is `Singleplayer` or `DedicatedServer`.
+/// of dedicated server sessions.
+/// Active when `SessionType` is `DedicatedServer`.
+///
+/// Note: There is no `Offline` state — the binary starting means the server starts.
+/// On shutdown or failure, the process exits via `AppExit` instead of returning to idle.
 #[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Reflect)]
 #[cfg(feature = "headless")]
 #[source(SessionType = SessionType::DedicatedServer)]
 pub enum ServerStatus {
-    /// Server is not running; no active game session.
-    #[default]
-    Offline,
     /// Server is starting up: loading world, spawning entities, initializing systems.
+    #[default]
     Starting,
     /// Server is running: physics active, accepting connections, processing gameplay.
     Running,

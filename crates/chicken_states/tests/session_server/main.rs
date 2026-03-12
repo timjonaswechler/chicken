@@ -3,7 +3,7 @@
 mod common;
 
 use chicken_states::{
-    events::session::{SetGoingPublicStep, SetServerShutdownStep, SetServerStartupStep},
+    events::session::{SetGoingPublicStep, SetServerShutdownStep},
     states::{
         app::AppScope,
         session::{ServerStatus, ServerVisibility, SessionType},
@@ -171,32 +171,6 @@ fn test_multiplayer_saved_host_server_goes_public() {
 // =============================================================================
 // Observer Guards
 // =============================================================================
-
-/// Guard: server start is blocked when SessionType is None (no menu confirm).
-#[test]
-fn test_server_start_blocked_without_session_type() {
-    let mut app = common::setup_test_app_hosted();
-
-    // SessionType is None — server start must be blocked
-    app.world_mut().trigger(SetServerStartupStep::Start);
-    common::update_app(&mut app, 1);
-
-    // ServerStatus should remain at its default (not Starting)
-    // ServerStatus doesn't even exist as a resource when SessionType is None
-    common::assert_session_type(&mut app, SessionType::None);
-}
-
-/// Guard: server start is blocked when already Running.
-#[test]
-fn test_server_start_blocked_when_already_running() {
-    let mut app = common::setup_test_app_singleplayer_confirmed();
-    common::server_startup_complete(&mut app);
-
-    app.world_mut().trigger(SetServerStartupStep::Start);
-    common::update_app(&mut app, 1);
-
-    common::assert_server_status(&mut app, ServerStatus::Running);
-}
 
 /// Guard: shutdown is blocked when server is not Running.
 #[test]

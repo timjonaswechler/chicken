@@ -14,7 +14,7 @@ use {
             ServerStartupStep, ServerStatus, ServerVisibility, SessionState, SessionType,
         },
     },
-    bevy::prelude::{App, AppExtStates, NextState, On, Plugin, Res, ResMut, State, warn},
+    bevy::prelude::{App, AppExtStates, NextState, On, Plugin, Res, ResMut, Resource, State, warn},
 };
 
 pub struct ServerSessionPlugin;
@@ -36,6 +36,11 @@ impl Plugin for ServerSessionPlugin {
             .add_observer(on_going_private_step);
     }
 }
+
+/// Exists if Multiplayer Host set confirm and will be removed after server is set to running.
+/// There the Server will be set to GoingPublic automatically.
+#[derive(Resource)]
+pub struct PendingGoingPublic;
 
 /// Validates transitions for going public.
 pub(crate) fn is_valid_server_visibility_public_transition(
@@ -110,6 +115,14 @@ pub(crate) fn is_valid_server_status_startup_transition(
     )
 }
 
+/// For hosted builds: server startup is only valid when a real session has been initiated
+/// from the menu (Singleplayer confirm or Multiplayer host confirm).
+/// Without a valid SessionType the server has no context to start in.
+#[cfg(feature = "hosted")]
+pub(crate) fn is_valid_session_type_for_server_startup(session_type: &SessionType) -> bool {
+    matches!(session_type, SessionType::Singleplayer)
+}
+
 /// Validates transitions between ServerStartupStep states.
 pub(crate) fn is_valid_startup_step_transition(
     from: &ServerStartupStep,
@@ -127,29 +140,47 @@ pub(crate) fn is_valid_startup_step_transition(
 
 fn on_server_startup_step(
     event: On<SetServerStartupStep>,
-    current_parent: Res<State<ServerStatus>>,
+    current_parent: Option<Res<State<ServerStatus>>>,
     current: Option<Res<State<ServerStartupStep>>>,
-    mut next_server_status: ResMut<NextState<ServerStatus>>,
+    session_type: Res<State<SessionType>>,
+    mut next_server_status: Option<ResMut<NextState<ServerStatus>>>,
     mut next_startup_step: Option<ResMut<NextState<ServerStartupStep>>>,
     mut next_session_type: ResMut<NextState<SessionType>>,
     #[cfg(feature = "hosted")] mut next_app_scope: ResMut<NextState<AppScope>>,
     #[cfg(feature = "headless")] mut exit_writer: MessageWriter<AppExit>,
 ) {
-    // Validate parent state transition
-    if !is_valid_server_status_startup_transition(current_parent.get(), event.event()) {
-        warn!(
-            "Invalid ServerStatus transition for ServerStartupStep: {:?} with parent status {:?}",
-            event.event(),
-            current_parent.get()
-        );
-        return;
-    }
-
     match *event.event() {
         // Start: Wechselt ServerStatus zu Starting UND setzt Step auf Init
         // Hier existiert noch kein ServerStartupStep (erst wenn Status = Starting)
         SetServerStartupStep::Start => {
-            next_server_status.set(ServerStatus::Starting);
+            #[cfg(feature = "hosted")]
+            if !is_valid_session_type_for_server_startup(session_type.get()) {
+                warn!(
+                    "Server cannot start: SessionType {:?} is not valid. \
+                     Server startup requires a session initiated from the menu \
+                     (Singleplayer or Multiplayer Confirm).",
+                    session_type.get()
+                );
+                return;
+            }
+            // ServerStatus must be Offline to start
+            let status = match current_parent {
+                Some(ref s) => s.get(),
+                None => {
+                    warn!("ServerStatus does not exist - cannot start server");
+                    return;
+                }
+            };
+            if !is_valid_server_status_startup_transition(status, event.event()) {
+                warn!(
+                    "Invalid ServerStatus transition for Start: {:?}",
+                    status
+                );
+                return;
+            }
+            if let Some(ref mut next_status) = next_server_status {
+                next_status.set(ServerStatus::Starting);
+            }
             if let Some(ref mut next_step) = next_startup_step {
                 next_step.set(ServerStartupStep::Init);
             }
@@ -191,10 +222,14 @@ fn on_server_startup_step(
                     }
                 }
                 (ServerStartupStep::Ready, SetServerStartupStep::Done) => {
-                    next_server_status.set(ServerStatus::Running);
+                    if let Some(ref mut s) = next_server_status {
+                        s.set(ServerStatus::Running);
+                    }
                 }
                 (_, SetServerStartupStep::Failed) => {
-                    next_server_status.set(ServerStatus::Offline);
+                    if let Some(ref mut s) = next_server_status {
+                        s.set(ServerStatus::Offline);
+                    }
 
                     #[cfg(feature = "hosted")]
                     {
@@ -553,7 +588,7 @@ mod tests {
         use crate::{
             events::session::{
                 SetGoingPrivateStep, SetGoingPublicStep, SetServerShutdownStep,
-                SetServerStartupStep, SetSessionType,
+                SetServerStartupStep,
             },
             logic::{app::AppLogicPlugin, session::server::ServerSessionPlugin},
             states::{
@@ -617,20 +652,18 @@ mod tests {
             }
 
             #[cfg(feature = "hosted")]
-            if session_type == SessionType::Singleplayer {
-                app.world_mut().trigger(SetSessionType::Singleplayer);
-                update_app(&mut app, 1);
-            }
-
-            #[cfg(feature = "hosted")]
-            if session_type == SessionType::Client {
-                app.world_mut().trigger(SetSessionType::Client);
+            if session_type != SessionType::None {
+                app.world_mut()
+                    .resource_mut::<NextState<SessionType>>()
+                    .set(session_type);
                 update_app(&mut app, 1);
             }
 
             #[cfg(feature = "headless")]
-            if session_type == SessionType::DedicatedServer {
-                app.world_mut().trigger(SetSessionType::DedicatedServer);
+            if session_type != SessionType::None {
+                app.world_mut()
+                    .resource_mut::<NextState<SessionType>>()
+                    .set(session_type);
                 update_app(&mut app, 1);
             }
 
@@ -901,8 +934,10 @@ mod tests {
         fn test_start_singleplayer() {
             #[cfg(feature = "hosted")]
             let mut app = helpers::test_start_singleplayer();
+
             #[cfg(feature = "headless")]
             let mut app = helpers::test_start_dedicated_server();
+
             helpers::start_server(&mut app);
             helpers::server_startup_next_step(&mut app, helpers::STARTUP_STEPS);
         }
@@ -937,8 +972,10 @@ mod tests {
         fn test_shutdown() {
             #[cfg(feature = "hosted")]
             let mut app = helpers::test_start_singleplayer();
+
             #[cfg(feature = "headless")]
             let mut app = helpers::test_start_dedicated_server();
+
             helpers::start_server(&mut app);
             helpers::server_startup_next_step(&mut app, helpers::STARTUP_STEPS);
 
@@ -951,8 +988,10 @@ mod tests {
             for step in 0..helpers::SHUTDOWN_STEPS {
                 #[cfg(feature = "hosted")]
                 let mut app = helpers::test_start_singleplayer();
+
                 #[cfg(feature = "headless")]
                 let mut app = helpers::test_start_dedicated_server();
+
                 helpers::start_server(&mut app);
                 helpers::server_startup_next_step(&mut app, helpers::STARTUP_STEPS);
 

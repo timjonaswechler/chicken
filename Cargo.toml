@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "xtask",
     "crates/chicken",
     "crates/chicken_exitcodes",
     "crates/chicken_identity",

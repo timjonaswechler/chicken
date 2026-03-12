@@ -1,0 +1,4 @@
+# Configure rust-analyzer to use the 'hosted' feature by default.
+# Without a feature, session states have no variants and LSP breaks.
+[cargo]
+features = ["hosted"]

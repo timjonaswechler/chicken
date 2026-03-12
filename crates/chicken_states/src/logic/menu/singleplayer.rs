@@ -8,13 +8,13 @@ use {
                 main::MainMenuScreen,
                 singleplayer::{NewGameMenuScreen, SavedGameMenuScreen, SingleplayerMenuScreen},
             },
-            session::{ServerStatus, ServerVisibility, SessionType},
+            session::{ServerStatus, SessionType},
         },
     },
     bevy::prelude::{App, AppExtStates, NextState, On, Plugin, Res, ResMut, State, warn},
 };
 
-pub struct SingleplayerMenuPlugin;
+pub(super) struct SingleplayerMenuPlugin;
 
 impl Plugin for SingleplayerMenuPlugin {
     fn build(&self, app: &mut App) {

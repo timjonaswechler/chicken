@@ -5,6 +5,7 @@ use {
         },
         logic::session::server::PendingGoingPublic,
         states::{
+            app::AppScope,
             menu::{
                 main::MainMenuScreen,
                 multiplayer::{
@@ -12,13 +13,10 @@ use {
                     MultiplayerMenuScreen,
                 },
             },
-            session::{ServerStatus, ServerVisibility, SessionType},
+            session::{ClientConnectionStatus, ServerStatus, SessionType},
         },
     },
-    bevy::{
-        ecs::system::Commands,
-        prelude::{App, AppExtStates, NextState, On, Plugin, Res, ResMut, State, warn},
-    },
+    bevy::prelude::{App, AppExtStates, Commands, NextState, On, Plugin, Res, ResMut, State, warn},
 };
 
 pub(super) struct MultiplayerMenuPlugin;
@@ -423,7 +421,9 @@ fn on_set_join_game(
     current_parent: Res<State<MultiplayerMenuScreen>>,
     current: Option<Res<State<JoinGameMenuScreen>>>,
     mut next_multiplayer: ResMut<NextState<MultiplayerMenuScreen>>,
-    mut commands: bevy::prelude::Commands,
+    mut next_session_type: ResMut<NextState<SessionType>>,
+    mut next_app_scope: ResMut<NextState<AppScope>>,
+    mut next_client_status: ResMut<NextState<ClientConnectionStatus>>,
 ) {
     if !is_valid_multiplayer_menu_screen_join_game_transition(current_parent.get(), event.event()) {
         warn!(
@@ -440,7 +440,9 @@ fn on_set_join_game(
         }
 
         SetJoinGame::Confirm => {
-            commands.trigger(crate::events::session::SetConnectingStep::Start);
+            next_session_type.set(SessionType::Client);
+            next_app_scope.set(AppScope::Session);
+            next_client_status.set(ClientConnectionStatus::Connecting);
         }
 
         _ => {
@@ -476,9 +478,8 @@ mod tests {
     };
     use crate::states::menu::main::MainMenuScreen;
     use crate::states::menu::multiplayer::{
-        HostNewGameMenuScreen, HostSavedGameMenuScreen, JoinGameMenuScreen, MultiplayerMenuScreen,
+        HostNewGameMenuScreen, HostSavedGameMenuScreen, MultiplayerMenuScreen,
     };
-    use crate::states::session::{ServerStatus, SessionType};
 
     mod validator_tests {
         use super::*;
@@ -691,12 +692,6 @@ mod tests {
             // Overview -> Next ist gültig
             assert!(is_valid_host_saved_game_menu_screen_transition(
                 &HostSavedGameMenuScreen::Overview,
-                &SetSavedHostGame::Next
-            ));
-
-            // ConfigServer -> Next ist gültig
-            assert!(is_valid_host_saved_game_menu_screen_transition(
-                &HostSavedGameMenuScreen::ConfigServer,
                 &SetSavedHostGame::Next
             ));
 

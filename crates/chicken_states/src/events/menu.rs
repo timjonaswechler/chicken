@@ -1,4 +1,4 @@
-pub(crate) mod multiplayer;
-pub(crate) mod settings;
-pub(crate) mod singleplayer;
-pub(crate) mod wiki;
+pub mod multiplayer;
+pub mod settings;
+pub mod singleplayer;
+pub mod wiki;

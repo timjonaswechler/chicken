@@ -22,3 +22,33 @@ workspace = true
 
 
 [dev-dependencies]
+
+[[test]]
+name = "menu_wiki"
+path = "tests/menu_wiki/main.rs"
+required-features = ["hosted"]
+
+[[test]]
+name = "menu_singleplayer"
+path = "tests/menu_singleplayer/main.rs"
+required-features = ["hosted"]
+
+[[test]]
+name = "menu_settings"
+path = "tests/menu_settings/main.rs"
+required-features = ["hosted"]
+
+[[test]]
+name = "session_server"
+path = "tests/session_server/main.rs"
+required-features = ["hosted"]
+
+[[test]]
+name = "session_client"
+path = "tests/session_client/main.rs"
+required-features = ["hosted"]
+
+[[test]]
+name = "session_server_headless"
+path = "tests/session_server_headless/main.rs"
+required-features = ["headless"]

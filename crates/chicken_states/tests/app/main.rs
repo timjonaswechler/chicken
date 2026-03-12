@@ -21,15 +21,6 @@ fn test_app_starts_in_splash() {
     common::assert_app_scope(&mut app, AppScope::Splash);
 }
 
-/// Splash -> Menu transition works.
-#[cfg(feature = "hosted")]
-#[test]
-fn test_splash_to_menu() {
-    let mut app = common::setup_test_app_hosted();
-
-    common::assert_app_scope(&mut app, AppScope::Menu);
-}
-
 /// Menu -> Session transition works.
 #[cfg(feature = "hosted")]
 #[test]

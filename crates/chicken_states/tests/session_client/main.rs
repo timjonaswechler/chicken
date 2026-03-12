@@ -3,7 +3,7 @@
 mod common;
 
 use chicken_states::{
-    events::session::{SetConnectingStep, SetDisconnectingStep, SetSyncingStep},
+    events::session::{SetDisconnectingStep, SetSyncingStep},
     states::{
         app::AppScope,
         session::{ClientConnectionStatus, ConnectingStep, SessionType, SyncingStep},

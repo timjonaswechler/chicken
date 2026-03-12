@@ -10,8 +10,8 @@ use {
         },
     },
     bevy::prelude::{
-        App, AppExtStates, ButtonInput, IntoScheduleConfigs, KeyCode, NextState, On, Plugin, Res,
-        ResMut, State, SystemCondition, Update, in_state, warn,
+        in_state, warn, App, AppExtStates, ButtonInput, IntoScheduleConfigs, KeyCode, NextState,
+        On, Plugin, Res, ResMut, State, SystemCondition, Update,
     },
 };
 
@@ -96,10 +96,7 @@ pub(crate) fn is_valid_client_status_connecting_transition(
 ) -> bool {
     matches!(
         (from, to),
-        (
-            ClientConnectionStatus::Disconnected,
-            SetConnectingStep::Start
-        ) | (ClientConnectionStatus::Connecting, SetConnectingStep::Next)
+        (ClientConnectionStatus::Connecting, SetConnectingStep::Next)
             | (ClientConnectionStatus::Connecting, SetConnectingStep::Done)
             | (_, SetConnectingStep::Failed)
     )
@@ -220,16 +217,7 @@ fn on_connecting_step(
     }
 
     match *event.event() {
-        // Start: Wechselt ClientConnectionStatus zu Connecting UND setzt Step auf ResolveAddress
-        SetConnectingStep::Start => {
-            if let Some(ref mut s) = next_client_status {
-                s.set(ClientConnectionStatus::Connecting);
-            }
-            if let Some(ref mut next_step) = next_connecting_step {
-                next_step.set(ConnectingStep::ResolveAddress);
-            }
-        }
-        // Next/Done/Failed: ConnectingStep muss existieren (Status muss Connecting sein)
+        // ConnectingStep muss existieren (Status muss Connecting sein)
         _ => {
             let current = match current {
                 Some(c) => *c.get(),
@@ -513,41 +501,47 @@ mod tests {
             let mut app = test_app();
             update_app(&mut app, 1);
 
-            #[cfg(feature = "hosted")]
-            {
-                let app_scope = app.world().resource::<State<AppScope>>();
-                assert_eq!(app_scope.get(), &AppScope::Splash);
-            }
+            // Splash → Menu
+            app.world_mut()
+                .resource_mut::<NextState<AppScope>>()
+                .set(AppScope::Menu);
+            update_app(&mut app, 1);
 
-            #[cfg(feature = "hosted")]
-            {
-                let mut next_app_scope = app.world_mut().resource_mut::<NextState<AppScope>>();
-                next_app_scope.set(AppScope::Menu);
-                update_app(&mut app, 1);
-            }
+            assert_eq!(
+                app.world().resource::<State<AppScope>>().get(),
+                &AppScope::Menu
+            );
 
-            #[cfg(feature = "hosted")]
-            {
-                let app_scope = app.world().resource::<State<AppScope>>();
-                assert_eq!(app_scope.get(), &AppScope::Menu);
-                let session_type = app.world().resource::<State<SessionType>>();
-                assert_eq!(session_type.get(), &SessionType::None);
-            }
+            // Set SessionType::Client before transitioning to Session
+            // (ClientConnectionStatus is a SubState of SessionType::Client)
+            app.world_mut()
+                .resource_mut::<NextState<SessionType>>()
+                .set(SessionType::Client);
+            app.world_mut()
+                .resource_mut::<NextState<AppScope>>()
+                .set(AppScope::Session);
+            update_app(&mut app, 1);
 
-            {
-                let session_type_state = app.world().resource::<State<SessionType>>();
-                assert_eq!(session_type_state.get(), &SessionType::Client);
-
-                let client_status = app.world().resource::<State<ClientConnectionStatus>>();
-                assert_eq!(client_status.get(), &ClientConnectionStatus::Disconnected);
-            }
+            assert_eq!(
+                app.world().resource::<State<SessionType>>().get(),
+                &SessionType::Client
+            );
+            assert_eq!(
+                app.world()
+                    .resource::<State<ClientConnectionStatus>>()
+                    .get(),
+                &ClientConnectionStatus::Disconnected
+            );
 
             app
         }
 
         /// Startet den Verbindungsprozess
         pub fn start_connecting(app: &mut App) {
-            app.world_mut().trigger(SetConnectingStep::Start);
+            // Set Connecting status directly (like SetJoinGame::Confirm does)
+            app.world_mut()
+                .resource_mut::<NextState<ClientConnectionStatus>>()
+                .set(ClientConnectionStatus::Connecting);
             update_app(app, 1);
 
             let client_status = app.world().resource::<State<ClientConnectionStatus>>();
@@ -729,13 +723,6 @@ mod tests {
 
         use super::*;
 
-        /// Test: ConnectingStep::Start wechselt zu ResolveAddress.
-        #[test]
-        fn test_connecting_start() {
-            let mut app = helpers::setup_test_app_for_client();
-            helpers::start_connecting(&mut app);
-        }
-
         /// Test: Verbindung erfolgreich herstellen
         #[test]
         fn test_connecting_success() {
@@ -889,32 +876,56 @@ mod tests {
         /// Test: Gültige ClientConnectionStatus-Connecting-Übergänge werden als gültig erkannt.
         #[test]
         fn test_valid_client_status_connecting_transitions() {
-            // Disconnected → Start ist gültig (Verbindung starten)
+            // Connecting → Next ist gültig (zum nächsten Step)
             assert!(is_valid_client_status_connecting_transition(
-                &ClientConnectionStatus::Disconnected,
-                &SetConnectingStep::Start
+                &ClientConnectionStatus::Connecting,
+                &SetConnectingStep::Next
+            ));
+
+            // Connecting → Done ist gültig (Verbindung hergestellt)
+            assert!(is_valid_client_status_connecting_transition(
+                &ClientConnectionStatus::Connecting,
+                &SetConnectingStep::Done
             ));
         }
 
         /// Test: Ungültige ClientConnectionStatus-Connecting-Übergänge werden blockiert.
         #[test]
         fn test_invalid_client_status_connecting_transitions() {
-            // Connecting → Start ist ungültig (bereits beim Verbinden)
+            // Disconnected → Next ist ungültig (muss erst Connecting werden)
             assert!(!is_valid_client_status_connecting_transition(
-                &ClientConnectionStatus::Connecting,
-                &SetConnectingStep::Start
+                &ClientConnectionStatus::Disconnected,
+                &SetConnectingStep::Next
             ));
 
-            // Connected → Start ist ungültig (bereits verbunden)
+            // Disconnected → Done ist ungültig (muss erst Connecting werden)
+            assert!(!is_valid_client_status_connecting_transition(
+                &ClientConnectionStatus::Disconnected,
+                &SetConnectingStep::Done
+            ));
+
+            // Connected → Next ist ungültig (bereits verbunden)
             assert!(!is_valid_client_status_connecting_transition(
                 &ClientConnectionStatus::Connected,
-                &SetConnectingStep::Start
+                &SetConnectingStep::Next
             ));
 
-            // Playing → Start ist ungültig (muss erst disconnecten)
+            // Connected → Done ist ungültig (bereits verbunden)
+            assert!(!is_valid_client_status_connecting_transition(
+                &ClientConnectionStatus::Connected,
+                &SetConnectingStep::Done
+            ));
+
+            // Playing → Next ist ungültig (muss erst disconnecten)
             assert!(!is_valid_client_status_connecting_transition(
                 &ClientConnectionStatus::Playing,
-                &SetConnectingStep::Start
+                &SetConnectingStep::Next
+            ));
+
+            // Playing → Done ist ungültig (muss erst disconnecten)
+            assert!(!is_valid_client_status_connecting_transition(
+                &ClientConnectionStatus::Playing,
+                &SetConnectingStep::Done
             ));
         }
 

@@ -18,18 +18,6 @@ pub enum SetPauseMenu {
     Exit,
 }
 
-// /// Events for controlling the session type.
-// #[cfg(feature = "hosted")]
-// #[derive(Event, Debug, Clone, Copy)]
-// pub enum SetSessionType {
-//     /// No active game session (main menu).
-//     None,
-//     /// Singleplayer or host session.
-//     Singleplayer,
-//     /// Client connection to a multiplayer session.
-//     Client,
-// }
-
 /// Events for controlling the server startup sequence.
 #[derive(Event, Debug, Clone, Copy)]
 pub enum SetServerStartupStep {
@@ -86,8 +74,6 @@ pub enum SetGoingPrivateStep {
 #[cfg(feature = "hosted")]
 #[derive(Event, Debug, Clone, Copy)]
 pub enum SetConnectingStep {
-    /// Initiate the connection process.
-    Start,
     /// Proceed to the next connecting step.
     Next,
     /// Connection process complete.

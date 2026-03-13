@@ -50,7 +50,7 @@ Use `--no-default-features` with specific features for dedicated server or clien
 pub mod client;
 
 /// Server hosting, visibility management, and discovery broadcast.
-mod server;
+pub mod server;
 
 /// Network configuration settings for servers and clients.
 mod settings;
@@ -104,9 +104,6 @@ impl Plugin for ChickenNetPlugin {
         ));
 
         #[cfg(feature = "client")]
-        app.add_plugins((
-            AeronetRepliconClientPlugin,
-            client::ClientLogicPlugin,
-        ));
+        app.add_plugins((AeronetRepliconClientPlugin, client::ClientLogicPlugin));
     }
 }

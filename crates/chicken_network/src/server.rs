@@ -14,7 +14,7 @@ impl Plugin for ServerLogicPlugin {
             discovery::DiscoveryServerPlugin,
             local::LocalServerPlugin,
             quic::QUICServerPlugin,
-            steam::SteamServerPlugin,
+            // steam::SteamServerPlugin,
         ));
     }
 }

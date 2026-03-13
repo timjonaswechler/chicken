@@ -43,6 +43,10 @@ enum Task {
         /// CI mode: no interactive prompt, structured output
         #[arg(long)]
         ci: bool,
+
+        /// Collect coverage via cargo-llvm-cov (implies --ci; writes cov-*.json files)
+        #[arg(long)]
+        coverage: bool,
     },
 }
 
@@ -56,8 +60,8 @@ fn main() -> Result<()> {
 
     match cli.command {
         Task::Release { version } => release(version),
-        Task::Test { crate_name, features, module, interactive, ci } => {
-            run_tests(crate_name, features, module, interactive, ci)
+        Task::Test { crate_name, features, module, interactive, ci, coverage } => {
+            run_tests(crate_name, features, module, interactive, ci || coverage, coverage)
         }
     }
 }
@@ -68,11 +72,12 @@ fn run_tests(
     module: Option<String>,
     interactive: bool,
     ci: bool,
+    coverage: bool,
 ) -> Result<()> {
     let jobs: Vec<TestJob> = if interactive && !ci {
         build_jobs_interactive()?
     } else if ci {
-        build_jobs_ci()
+        build_jobs_ci(coverage)
     } else {
         build_jobs(crate_arg, features_arg, module)
     };
@@ -102,13 +107,17 @@ fn run_tests(
     }
     println!("{sep}");
 
+    if coverage {
+        generate_coverage_reports(&jobs)?;
+    }
+
     if !failed.is_empty() {
         std::process::exit(1);
     }
     Ok(())
 }
 
-fn build_jobs_ci() -> Vec<TestJob> {
+fn build_jobs_ci(use_llvm_cov: bool) -> Vec<TestJob> {
     let mut jobs = vec![];
     for cfg in CRATES.iter().filter(|c| c.ci) {
         for (_, feat) in cfg.features.iter() {
@@ -119,20 +128,67 @@ fn build_jobs_ci() -> Vec<TestJob> {
                 test_threads_1: cfg.test_threads_1,
                 integration_test: None,
                 module: None,
+                use_llvm_cov,
             });
-            // All integration tests
-            for &it in cfg.integration_tests.iter() {
-                jobs.push(TestJob {
-                    crate_name: cfg.name.to_string(),
-                    features: feat.to_string(),
-                    test_threads_1: cfg.test_threads_1,
-                    integration_test: Some(it.to_string()),
-                    module: None,
-                });
+            // Integration tests filtered by required feature
+            for &(it, required_feat) in cfg.integration_tests.iter() {
+                if required_feat.is_empty() || required_feat == *feat {
+                    jobs.push(TestJob {
+                        crate_name: cfg.name.to_string(),
+                        features: feat.to_string(),
+                        test_threads_1: cfg.test_threads_1,
+                        integration_test: Some(it.to_string()),
+                        module: None,
+                        use_llvm_cov,
+                    });
+                }
             }
         }
     }
     jobs
+}
+
+fn generate_coverage_reports(jobs: &[TestJob]) -> Result<()> {
+    let sep = "=".repeat(50);
+    println!("\n{sep}");
+    println!("GENERATING COVERAGE REPORTS");
+    println!("{sep}\n");
+
+    // Collect unique (crate, features) combos in order
+    let mut seen = std::collections::HashSet::new();
+    let mut combos: Vec<(&str, &str)> = vec![];
+    for job in jobs {
+        let key = (job.crate_name.as_str(), job.features.as_str());
+        if seen.insert(key) {
+            combos.push(key);
+        }
+    }
+
+    for (crate_name, features) in combos {
+        // Build output filename: strip "chicken_" prefix, append features if non-empty
+        let short = crate_name.strip_prefix("chicken_").unwrap_or(crate_name);
+        let filename = if features.is_empty() {
+            format!("cov-{short}.json")
+        } else {
+            // "server,client" → "server-client" for safe filenames
+            let feat_slug = features.replace(',', "-");
+            format!("cov-{short}-{feat_slug}.json")
+        };
+
+        let mut cmd = Command::new("cargo");
+        cmd.arg("llvm-cov").arg("report")
+            .arg("--json")
+            .arg("--output-path").arg(&filename)
+            .arg("-p").arg(crate_name);
+
+        println!("Report: {filename}");
+        let status = cmd.status()?;
+        if !status.success() {
+            eprintln!("Warning: coverage report failed for {crate_name} [{features}]");
+        }
+    }
+
+    Ok(())
 }
 
 fn build_jobs(
@@ -154,6 +210,7 @@ fn build_jobs(
                 test_threads_1: cfg.test_threads_1,
                 integration_test: None,
                 module: module.clone(),
+                use_llvm_cov: false,
             });
         }
     }
@@ -294,7 +351,7 @@ fn build_jobs_interactive() -> Result<Vec<TestJob>> {
 
             Phase::IntegrationTests(pos) => {
                 let cfg = &CRATES[selected_crates[pos]];
-                let options: Vec<&str> = cfg.integration_tests.to_vec();
+                let options: Vec<&str> = cfg.integration_tests.iter().map(|(name, _)| *name).collect();
                 let prompt = format!("[{}/{}] Integration tests for {}:", pos + 1, selected_crates.len(), cfg.name);
                 match or_back(MultiSelect::new(&prompt, options.clone()).prompt())? {
                     None => phase = if answers[pos].kind == 2 { Phase::Module(pos) } else { Phase::Kind(pos) },
@@ -344,17 +401,22 @@ fn build_jobs_from_answers(selected_crates: &[usize], answers: &[CrateAnswers]) 
                     test_threads_1: cfg.test_threads_1,
                     integration_test: None,
                     module: ans.module.clone(),
+                    use_llvm_cov: false,
                 });
             }
             for &it_idx in &ans.integration_tests {
                 if run_integration {
-                    jobs.push(TestJob {
-                        crate_name: cfg.name.to_string(),
-                        features: feat.to_string(),
-                        test_threads_1: cfg.test_threads_1,
-                        integration_test: Some(cfg.integration_tests[it_idx].to_string()),
-                        module: None,
-                    });
+                    let (it_name, required_feat) = cfg.integration_tests[it_idx];
+                    if required_feat.is_empty() || required_feat == feat {
+                        jobs.push(TestJob {
+                            crate_name: cfg.name.to_string(),
+                            features: feat.to_string(),
+                            test_threads_1: cfg.test_threads_1,
+                            integration_test: Some(it_name.to_string()),
+                            module: None,
+                            use_llvm_cov: false,
+                        });
+                    }
                 }
             }
         }

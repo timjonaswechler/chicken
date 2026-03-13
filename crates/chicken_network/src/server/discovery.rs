@@ -1,6 +1,6 @@
 use {
     bevy::prelude::*, chicken_settings_content::networking::NetworkingSettings,
-    chicken_states::ServerVisibility, std::net::UdpSocket,
+    chicken_states::states::session::ServerVisibility, std::net::UdpSocket,
 };
 
 pub const MAGIC: &[u8] = b"FORGE_DISCOVER_V1";

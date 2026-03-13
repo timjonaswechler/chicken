@@ -5,7 +5,7 @@ use {
         tasks::{AsyncComputeTaskPool, Task, futures::check_ready},
     },
     chicken_settings_content::networking::NetworkingSettings,
-    chicken_states::MultiplayerMenuScreen,
+    chicken_states::states::menu::multiplayer::MultiplayerMenuScreen,
     std::{net::UdpSocket, time::Duration},
 };
 

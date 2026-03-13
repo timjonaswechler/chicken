@@ -2,8 +2,9 @@ pub struct CrateConfig {
     pub name: &'static str,
     pub features: &'static [(&'static str, &'static str)],
     pub test_threads_1: bool,
-    /// Integration test binaries (files in tests/)
-    pub integration_tests: &'static [&'static str],
+    /// Integration test binaries: (test_name, required_feature).
+    /// Use "" as required_feature to run with all features.
+    pub integration_tests: &'static [(&'static str, &'static str)],
     /// Include in CI test run
     pub ci: bool,
 }
@@ -14,11 +15,14 @@ pub const CRATES: &[CrateConfig] = &[
         features: &[("hosted", "hosted"), ("headless", "headless")],
         test_threads_1: false,
         integration_tests: &[
-            "app",
-            "menu_wiki",
-            "menu_singleplayer",
-            "menu_settings",
-            "menu_multiplayer",
+            ("app", ""),
+            ("menu_multiplayer", "hosted"),
+            ("menu_settings", "hosted"),
+            ("menu_singleplayer", "hosted"),
+            ("menu_wiki", "hosted"),
+            ("session_client", "hosted"),
+            ("session_server", "hosted"),
+            ("session_server_headless", "headless"),
         ],
         ci: true,
     },

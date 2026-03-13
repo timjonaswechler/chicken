@@ -4,19 +4,19 @@ use bevy_replicon::prelude::Replicated;
 pub use discovery::{DiscoveredServers, DiscoveryControl, DiscoveryTask};
 
 use {
-    crate::{local::LocalClient, shared::PlayerNameMessage},
-    Aeron::io::{
+    crate::{server::local::LocalClient, shared::PlayerNameMessage},
+    aeronet::io::{
         Session,
         connection::{Disconnect, Disconnected},
     },
-    Aeron_io::connection::DisconnectReason,
-    Aeron_replicon::client::AeronetRepliconClient,
-    Aeron_webtransport::client::{WebTransportClient, WebTransportClientPlugin},
+    aeronet_io::connection::DisconnectReason,
+    aeronet_replicon::client::AeronetRepliconClient,
+    aeronet_webtransport::client::{WebTransportClient, WebTransportClientPlugin},
     bevy::prelude::*,
     chicken_notifications::Notify,
     chicken_states::{
-        ClientConnectionStatus, ConnectingStep, DisconnectingStep, SetConnectingStep,
-        SetDisconnectingStep, SetSyncingStep,
+        events::session::{SetConnectingStep, SetDisconnectingStep, SetSyncingStep},
+        states::session::{ClientConnectionStatus, ConnectingStep, DisconnectingStep},
     },
     discovery::ClientDiscoveryPlugin,
     helpers::client_config,
@@ -28,30 +28,32 @@ impl Plugin for ClientLogicPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((WebTransportClientPlugin, ClientDiscoveryPlugin))
             .init_resource::<ClientTarget>()
-            .add_systems(OnEnter(ClientStatus::Connecting), on_client_connecting)
             .add_systems(
-                OnEnter(ClientStatus::Disconnecting),
-                on_client_start_disconnecting,
+                OnEnter(ClientConnectionStatus::Connecting),
+                on_client_connecting,
             )
             .add_systems(
                 Update,
-                client_syncing.run_if(in_state(ClientStatus::Syncing)),
+                client_syncing.run_if(in_state(ClientConnectionStatus::Syncing)),
             )
-            .add_systems(OnEnter(ClientStatus::Running), on_client_running)
+            .add_systems(
+                OnEnter(ClientConnectionStatus::Connected),
+                on_client_running,
+            )
             .add_systems(
                 Update,
-                client_disconnecting.run_if(in_state(ClientStatus::Disconnecting)),
+                client_disconnecting.run_if(in_state(ClientConnectionStatus::Disconnecting)),
             );
     }
 }
 
 fn on_client_disconnected(
     trigger: On<Disconnected>,
-    state: Res<State<ClientStatus>>,
+    state: Res<State<ClientConnectionStatus>>,
     mut commands: Commands,
 ) {
     match state.get() {
-        ClientStatus::Syncing | ClientStatus::Running => {
+        ClientConnectionStatus::Syncing | ClientConnectionStatus::Connected => {
             on_client_receive_disconnect(&trigger.reason, &mut commands);
         }
         _ => {}
@@ -71,7 +73,7 @@ fn on_client_receive_disconnect(reason: &DisconnectReason, commands: &mut Comman
         DisconnectReason::ByUser(_) => return,
     }
 
-    commands.trigger(SetClientStatus::Failed);
+    commands.trigger(SetConnectingStep::Failed);
 }
 
 /// ClientTarget is the data structure which the user selected or putted in a text field
@@ -211,30 +213,30 @@ fn on_client_connecting(
 
 fn on_client_connection_failed(
     trigger: On<Disconnected>,
-    current_state: Option<Res<State<ClientStatus>>>,
+    current_state: Option<Res<State<ClientConnectionStatus>>>,
     mut commands: Commands,
     mut client_target: ResMut<ClientTarget>,
 ) {
     if let Some(current_state) = current_state {
-        if *current_state.get() == ClientStatus::Connecting {
+        if *current_state.get() == ClientConnectionStatus::Connecting {
             match &trigger.reason {
                 DisconnectReason::ByError(err) => {
                     error!("Connection Error: {}", err);
                     commands.trigger(Notify::error(format!("Connection Error: {}", err)));
                     client_target.is_valid = false;
-                    commands.trigger(SetClientStatus::Failed);
+                    commands.trigger(SetConnectingStep::Failed);
                 }
                 DisconnectReason::ByUser(err) => {
                     error!("Connection Error: {}", err);
                     commands.trigger(Notify::error(format!("Connection Error: {}", err)));
                     client_target.is_valid = false;
-                    commands.trigger(SetClientStatus::Failed);
+                    commands.trigger(SetConnectingStep::Failed);
                 }
                 DisconnectReason::ByPeer(err) => {
                     error!("Connection Error: {}", err);
                     commands.trigger(Notify::error(format!("Connection Error: {}", err)));
                     client_target.is_valid = false;
-                    commands.trigger(SetClientStatus::Failed);
+                    commands.trigger(SetConnectingStep::Failed);
                 }
             }
         }
@@ -263,45 +265,47 @@ fn on_client_connected(
         warn!("Session {} missing Name component", target);
     }
 
-    commands.trigger(SetClientStatus::Transition(ClientStatus::Syncing));
+    commands.trigger(SetConnectingStep::Next);
 }
 
 fn client_syncing(mut commands: Commands) {
     info!("TODO: Implement client sync system");
-    commands.trigger(SetClientStatus::Transition(ClientStatus::Running));
+    commands.trigger(SetConnectingStep::Done);
 }
 
 fn on_client_running(mut _commands: Commands) {
     info!("Client is running");
 }
 
-fn on_client_start_disconnecting(mut commands: Commands) {
-    info!("Starting Client Disconnect sequence");
-    commands.trigger(SetClientShutdownStep::Start);
-}
-
 fn client_disconnecting(
     mut commands: Commands,
-    step: Res<State<ClientShutdownStep>>,
+    step: Res<State<DisconnectingStep>>,
     client_query: Query<Entity, With<LocalClient>>,
 ) {
     match step.get() {
-        ClientShutdownStep::DisconnectFromServer => {
-            // 1. Tick: Disconnect from Server
+        DisconnectingStep::SendDisconnect => {
+            // Send disconnect signal to server
             if let Ok(entity) = client_query.single() {
                 commands.trigger(Disconnect::new(entity, "client disconnecting"));
             }
-            commands.trigger(SetClientShutdownStep::Next);
+            commands.trigger(SetDisconnectingStep::Next);
         }
-        ClientShutdownStep::DespawnLocalClient => {
-            // 2. Tick: Despawn Local Client
+        DisconnectingStep::WaitForAck => {
+            // TODO: Wait for server acknowledgment before proceeding
+            commands.trigger(SetDisconnectingStep::Next);
+        }
+        DisconnectingStep::Cleanup => {
+            // Despawn local client entity
             if let Ok(entity) = client_query.single() {
                 if let Ok(mut entity) = commands.get_entity(entity) {
                     entity.despawn();
                 }
             } else if client_query.is_empty() {
-                commands.trigger(SetClientShutdownStep::Done);
+                commands.trigger(SetDisconnectingStep::Next);
             }
+        }
+        DisconnectingStep::Ready => {
+            commands.trigger(SetDisconnectingStep::Done);
         }
     }
 }

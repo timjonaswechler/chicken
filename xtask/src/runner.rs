@@ -9,6 +9,8 @@ pub struct TestJob {
     pub integration_test: Option<String>,
     /// filter passed after `--` to libtest
     pub module: Option<String>,
+    /// Use `cargo llvm-cov --no-report` instead of `cargo test`
+    pub use_llvm_cov: bool,
 }
 
 pub struct JobResult {
@@ -19,7 +21,12 @@ pub struct JobResult {
 
 pub fn run_job(job: &TestJob) -> Result<JobResult> {
     let mut cmd = Command::new("cargo");
-    cmd.arg("test").arg("-p").arg(&job.crate_name);
+    if job.use_llvm_cov {
+        cmd.arg("llvm-cov").arg("--no-report");
+    } else {
+        cmd.arg("test");
+    }
+    cmd.arg("-p").arg(&job.crate_name);
 
     if !job.features.is_empty() {
         cmd.arg("--features").arg(&job.features);

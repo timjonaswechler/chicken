@@ -5,7 +5,7 @@
 | Repo | Zweck |
 |------|-------|
 | `chicken` | Rust Workspace — Game-Lib (dieses Repo) |
-| `fos_client` | Bevy Game Client — konsumiert `chicken` |
+| `campfire` | Bevy Game Client — konsumiert `chicken` |
 
 ## Branch-Strategie
 
@@ -32,7 +32,7 @@ test(scope): kurze Beschreibung
 
 | Flag | Zweck |
 |------|-------|
-| `hosted` | fos_client (Singleplayer + Multiplayer Host + Client) |
+| `hosted` | campfire (Singleplayer + Multiplayer Host + Client) |
 | `headless` | Dedicated Server Binary |
 
 ## Tests
@@ -61,12 +61,12 @@ just release 0.2.0
 3. GitHub Actions (`release.yml`) läuft automatisch:
    - Tests + Coverage
    - GitHub Release mit Changelog (nur aktueller Tag) + Coverage-Tabelle
-   - PR in `fos_client` mit chicken Release Notes als Body
+   - PR in `campfire` mit chicken Release Notes als Body
 
-## fos_client Update (nach chicken Release)
+## campfire Update (nach chicken Release)
 
-1. Automatischer PR landet in `fos_client` mit chicken Release Notes
-2. PR-Titel anpassen: "was merkt der User?" → wird der fos_client Changelog-Eintrag
+1. Automatischer PR landet in `campfire` mit chicken Release Notes
+2. PR-Titel anpassen: "was merkt der User?" → wird der campfire Changelog-Eintrag
 3. Squash and Merge
 
 ## Changelog

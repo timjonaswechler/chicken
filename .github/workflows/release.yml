@@ -83,18 +83,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ─── Notify fos_client ───────────────────────────────────────────────────
+      # ─── Notify campfire ─────────────────────────────────────────────────────
 
-      - name: Get current chicken tag in fos_client
+      - name: Get current chicken tag in campfire
         id: current
         env:
           GH_TOKEN: ${{ secrets.FOC_CLIENT_TOKEN }}
         run: |
-          CARGO_TOML=$(gh api repos/timjonaswechler/fos_client/contents/Cargo.toml \
+          CARGO_TOML=$(gh api repos/timjonaswechler/campfire/contents/Cargo.toml \
             --jq '.content' | base64 -d)
           CURRENT_TAG=$(echo "$CARGO_TOML" | grep -oP 'tag = "\Kv[^"]+')
           echo "current-tag=$CURRENT_TAG" >> $GITHUB_OUTPUT
-          echo "Current chicken tag in fos_client: $CURRENT_TAG"
+          echo "Current chicken tag in campfire: $CURRENT_TAG"
 
       - name: Generate PR release notes
         id: pr_notes
@@ -114,21 +114,21 @@ jobs:
             echo "EOF"
           } >> $GITHUB_OUTPUT
 
-      - name: Checkout fos_client
+      - name: Checkout campfire
         uses: actions/checkout@v4
         with:
-          repository: timjonaswechler/fos_client
+          repository: timjonaswechler/campfire
           token: ${{ secrets.FOC_CLIENT_TOKEN }}
-          path: fos_client
+          path: campfire
 
-      - name: Create PR in fos_client
+      - name: Create PR in campfire
         env:
           GH_TOKEN: ${{ secrets.FOC_CLIENT_TOKEN }}
         run: |
           NEW_TAG="${{ github.ref_name }}"
           BRANCH="chore/update-chicken-${NEW_TAG}"
 
-          cd fos_client
+          cd campfire
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -142,7 +142,7 @@ jobs:
           git push origin "$BRANCH"
 
           gh pr create \
-            --repo timjonaswechler/fos_client \
+            --repo timjonaswechler/campfire \
             --base main \
             --head "$BRANCH" \
             --title "chore(deps): update chicken to ${NEW_TAG}" \

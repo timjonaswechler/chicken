@@ -312,7 +312,7 @@ fn client_disconnecting(
 
 pub(crate) mod helpers {
     use {
-        aeronetet_webtransport::{cert, client::ClientConfig, wtransport::tls::Sha256Digest},
+        aeronet_webtransport::{cert, client::ClientConfig, wtransport::tls::Sha256Digest},
         bevy::prelude::*,
         core::time::Duration,
         std::net::SocketAddr,

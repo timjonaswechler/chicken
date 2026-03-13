@@ -14,5 +14,8 @@ doc *args:
 release version:
     cargo xtask release {{version}}
 
+changelog:
+    git-cliff --config cliff.toml --output CHANGELOG.md
+
 test *args:
     cargo xtask test {{args}}

@@ -69,6 +69,7 @@ protect_breaking_commits = false
 # Assigns commits to groups.
 # Optionally sets the commit's scope and can decide to exclude commits from further processing.
 commit_parsers = [
+    { message = "^chore\\(release\\)", skip = true },
     { message = "^feat", group = "🚀 Features" },
     { message = "^fix", group = "🐛 Bug Fixes" },
     { message = "^doc", group = "📚 Documentation" },

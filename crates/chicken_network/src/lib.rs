@@ -6,11 +6,10 @@ Networking crate for the Chicken game, built on Bevy's ecosystem with Aeronet an
 
 ## Architecture
 
-This crate provides a unified networking layer supporting three modes:
+This crate provides a unified networking layer supporting two modes:
 
 - **Client**: Connects to remote multiplayer servers with discovery and connection management
 - **Server**: Hosts multiplayer sessions with visibility control and UDP discovery broadcast
-- **Singleplayer**: Local client-server loop using in-memory channels for offline play
 
 Built on `bevy_replicon` for entity replication and `aeronet` for WebTransport networking.
 
@@ -19,9 +18,7 @@ Built on `bevy_replicon` for entity replication and `aeronet` for WebTransport n
 - `ChickenNetPlugin`: Main plugin that wires all networking systems
 - `client`: Client connection lifecycle, server discovery, and teardown
 - `server`: Server hosting, visibility state machine, and discovery responses
-- `singleplayer`: Local session orchestration with graceful shutdown
 - `shared`: Common message types and replicated resources
-- `local`: Marker components for local-only entities
 - `settings`: Network configuration (`ServerSettings`, `NetworkSettings`)
 
 ## Usage
@@ -55,20 +52,11 @@ pub mod client;
 /// Server hosting, visibility management, and discovery broadcast.
 mod server;
 
-/// Singleplayer session orchestration using local client-server channels.
-#[cfg(feature = "client")]
-mod singleplayer;
-
-/// Marker components for local session entities (singleplayer mode).
-pub mod local;
-
 /// Network configuration settings for servers and clients.
 mod settings;
 
 /// Shared message types, resources, and replicated components.
 pub mod shared;
-
-pub use server::helpers::*;
 
 #[cfg(feature = "client")]
 use aeronet_replicon::client::AeronetRepliconClientPlugin;
@@ -78,7 +66,7 @@ use {
     bevy_replicon::RepliconPlugins,
 };
 
-pub use local::*;
+pub use server::local::{LocalBot, LocalClient, LocalServer, LocalSession};
 
 /// Main plugin that wires all networking systems for the Chicken game.
 ///
@@ -87,11 +75,10 @@ pub use local::*;
 /// - WebTransport networking via `aeronet`
 /// - Server hosting and visibility management
 /// - Client connection lifecycle and discovery
-/// - Singleplayer local session orchestration
 ///
 /// The plugin automatically configures the appropriate systems based on enabled features:
 /// - With `server` feature: Server hosting and discovery broadcast
-/// - With `client` feature: Client connections, discovery, and singleplayer support
+/// - With `client` feature: Client connections and discovery
 ///
 /// # Usage
 ///
@@ -119,7 +106,6 @@ impl Plugin for ChickenNetPlugin {
         #[cfg(feature = "client")]
         app.add_plugins((
             AeronetRepliconClientPlugin,
-            singleplayer::SingleplayerLogicPlugin,
             client::ClientLogicPlugin,
         ));
     }

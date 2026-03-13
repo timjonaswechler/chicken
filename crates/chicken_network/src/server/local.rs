@@ -1,20 +1,44 @@
-use crate::{LocalClient, LocalServer, LocalSession};
-
 use {
     aeronet::io::{connection::Disconnect, server::Close},
     aeronet_channel::{ChannelIo, ChannelIoPlugin},
     aeronet_webtransport::server::{WebTransportServer, WebTransportServerClient},
     bevy::{ecs::query::QuerySingleError, prelude::*},
     chicken_states::{
-        ServerShutdownStep, ServerStartupStep, ServerStatus, SetServerShutdownStep,
-        SetServerStartupStep,
+        events::session::{SetServerShutdownStep, SetServerStartupStep},
+        logic::session::server::PendingGoingPublic,
+        states::session::{ServerShutdownStep, ServerStartupStep, ServerStatus, ServerVisibility},
     },
 };
 
-/// #Local Server
+/// Marker component for entities participating in a local singleplayer session.
+///
+/// Used to identify and query entities that are part of the local client-server loop
+/// in singleplayer mode, distinguishing them from networked multiplayer entities.
+#[derive(Component)]
+pub struct LocalSession;
 
+/// Marker component for the local client entity in singleplayer mode.
+///
+/// Attached to the client entity that connects to the local server via in-memory
+/// channels. Used to identify local client-specific systems and resources.
+#[derive(Component)]
+pub struct LocalClient;
+
+/// Marker component for the local server entity in singleplayer mode.
+///
+/// Attached to the server entity that hosts the game locally via in-memory
+/// channels. Used to identify local server-specific systems and resources.
+#[derive(Component)]
+pub struct LocalServer;
+
+/// Marker component for AI-controlled bot entities.
+///
+/// Used to distinguish bot players from human players in both singleplayer
+/// and multiplayer sessions. Bots may be spawned locally or replicated from server.
 #[derive(Component)]
 pub struct LocalBot;
+
+/// #Local Server
 
 pub(crate) struct LocalServerPlugin;
 
@@ -156,8 +180,11 @@ fn server_stopping(
                     server_entity.despawn();
                 }
             } else if server_query.is_empty() && local_server_query.is_empty() {
-                commands.trigger(SetServerShutdownStep::Done);
+                commands.trigger(SetServerShutdownStep::Next);
             }
+        }
+        ServerShutdownStep::Ready => {
+            commands.trigger(SetServerShutdownStep::Done);
         }
     }
 }

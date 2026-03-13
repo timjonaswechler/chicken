@@ -1,7 +1,5 @@
-use chicken_states::{GoingPrivateStep, SetGoingPrivateStep};
-
 use {
-    super::{MAGIC, networking::ports},
+    super::{discovery::MAGIC, networking::ports},
     aeronet::io::{connection::Disconnect, server::Close},
     aeronet_replicon::server::AeronetRepliconServer,
     aeronet_webtransport::{
@@ -11,7 +9,10 @@ use {
     bevy::{ecs::query::QuerySingleError, prelude::*},
     chicken_notifications::Notify,
     chicken_settings_content::networking::NetworkingSettings,
-    chicken_states::{GoingPublicStep, ServerVisibility, SetGoingPublicStep, SetServerStartupStep},
+    chicken_states::{
+        events::session::{SetGoingPrivateStep, SetGoingPublicStep, SetServerStartupStep},
+        states::session::{GoingPrivateStep, GoingPublicStep, ServerVisibility},
+    },
     core::time::Duration,
     std::net::UdpSocket,
 };
@@ -133,6 +134,7 @@ fn server_going_public(
                 ));
                 }
             }
+            commands.trigger(SetGoingPublicStep::Next);
         }
         GoingPublicStep::Ready => commands.trigger(SetGoingPublicStep::Done),
     }
@@ -164,7 +166,11 @@ fn server_going_private(
                 commands.trigger(SetGoingPrivateStep::Next);
             }
         }
-        GoingPrivateStep::CleanupComplete => commands.trigger(SetGoingPrivateStep::Done),
+        GoingPrivateStep::Cleanup => {
+            // TODO: impl Cleanup routine
+            commands.trigger(SetGoingPrivateStep::Next);
+        }
+        GoingPrivateStep::Ready => commands.trigger(SetGoingPrivateStep::Done),
     }
 }
 

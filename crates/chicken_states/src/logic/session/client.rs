@@ -1,17 +1,20 @@
 use {
     crate::{
-        events::session::{SetConnectingStep, SetDisconnectingStep, SetPauseMenu, SetSyncingStep},
+        events::session::{
+            SetConnectingStep, SetDisconnectingStep, SetPauseMenu, SetServerShutdownStep,
+            SetSyncingStep,
+        },
         states::{
             app::AppScope,
             session::{
-                ClientConnectionStatus, ConnectingStep, DisconnectingStep, PauseMenu,
-                ServerShutdownStep, ServerStatus, SessionState, SessionType, SyncingStep,
+                ClientConnectionStatus, ConnectingStep, DisconnectingStep, PauseMenu, SessionState,
+                SessionType, SyncingStep,
             },
         },
     },
     bevy::prelude::{
-        in_state, warn, App, AppExtStates, ButtonInput, IntoScheduleConfigs, KeyCode, NextState,
-        On, Plugin, Res, ResMut, State, SystemCondition, Update,
+        in_state, warn, App, AppExtStates, ButtonInput, Commands, IntoScheduleConfigs, KeyCode,
+        NextState, On, Plugin, Res, ResMut, State, SystemCondition, Update,
     },
 };
 
@@ -52,12 +55,10 @@ fn toggle_game_menu(
 
 fn handle_pause_menu_nav(
     trigger: On<SetPauseMenu>,
+    mut commands: Commands,
     mut next_pause_menu: ResMut<NextState<PauseMenu>>,
     mut next_session_state: ResMut<NextState<SessionState>>,
     session_type: Res<State<SessionType>>,
-    mut next_client_status: ResMut<NextState<ClientConnectionStatus>>,
-    mut next_server_status: ResMut<NextState<ServerStatus>>,
-    mut next_server_shutdown_step: ResMut<NextState<ServerShutdownStep>>,
 ) {
     match trigger.event() {
         SetPauseMenu::Resume => {
@@ -74,11 +75,10 @@ fn handle_pause_menu_nav(
         }
         SetPauseMenu::Exit => match session_type.get() {
             SessionType::Singleplayer => {
-                next_server_status.set(ServerStatus::Stopping);
-                next_server_shutdown_step.set(ServerShutdownStep::SaveWorld);
+                commands.trigger(SetServerShutdownStep::Start);
             }
             SessionType::Client => {
-                next_client_status.set(ClientConnectionStatus::Disconnecting);
+                commands.trigger(SetDisconnectingStep::Start);
             }
             _ => {}
         },

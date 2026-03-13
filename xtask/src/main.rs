@@ -120,15 +120,17 @@ fn build_jobs_ci() -> Vec<TestJob> {
                 integration_test: None,
                 module: None,
             });
-            // All integration tests
-            for &it in cfg.integration_tests.iter() {
-                jobs.push(TestJob {
-                    crate_name: cfg.name.to_string(),
-                    features: feat.to_string(),
-                    test_threads_1: cfg.test_threads_1,
-                    integration_test: Some(it.to_string()),
-                    module: None,
-                });
+            // Integration tests filtered by required feature
+            for &(it, required_feat) in cfg.integration_tests.iter() {
+                if required_feat.is_empty() || required_feat == *feat {
+                    jobs.push(TestJob {
+                        crate_name: cfg.name.to_string(),
+                        features: feat.to_string(),
+                        test_threads_1: cfg.test_threads_1,
+                        integration_test: Some(it.to_string()),
+                        module: None,
+                    });
+                }
             }
         }
     }
@@ -294,7 +296,7 @@ fn build_jobs_interactive() -> Result<Vec<TestJob>> {
 
             Phase::IntegrationTests(pos) => {
                 let cfg = &CRATES[selected_crates[pos]];
-                let options: Vec<&str> = cfg.integration_tests.to_vec();
+                let options: Vec<&str> = cfg.integration_tests.iter().map(|(name, _)| *name).collect();
                 let prompt = format!("[{}/{}] Integration tests for {}:", pos + 1, selected_crates.len(), cfg.name);
                 match or_back(MultiSelect::new(&prompt, options.clone()).prompt())? {
                     None => phase = if answers[pos].kind == 2 { Phase::Module(pos) } else { Phase::Kind(pos) },
@@ -348,13 +350,16 @@ fn build_jobs_from_answers(selected_crates: &[usize], answers: &[CrateAnswers]) 
             }
             for &it_idx in &ans.integration_tests {
                 if run_integration {
-                    jobs.push(TestJob {
-                        crate_name: cfg.name.to_string(),
-                        features: feat.to_string(),
-                        test_threads_1: cfg.test_threads_1,
-                        integration_test: Some(cfg.integration_tests[it_idx].to_string()),
-                        module: None,
-                    });
+                    let (it_name, required_feat) = cfg.integration_tests[it_idx];
+                    if required_feat.is_empty() || required_feat == feat {
+                        jobs.push(TestJob {
+                            crate_name: cfg.name.to_string(),
+                            features: feat.to_string(),
+                            test_threads_1: cfg.test_threads_1,
+                            integration_test: Some(it_name.to_string()),
+                            module: None,
+                        });
+                    }
                 }
             }
         }

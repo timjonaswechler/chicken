@@ -42,6 +42,14 @@ just test                    # interaktiver Wizard
 just test -c chicken_states  # spezifisches Crate
 ```
 
+## CI
+
+Bei jedem Push und PR auf `main` läuft automatisch:
+1. `cargo xtask test --ci` — alle Crates mit allen Features + Integration Tests
+2. Code Coverage Report — sichtbar im GitHub Actions Summary Tab
+
+Crates mit pre-existing Compile-Fehlern sind via `ci: false` in `xtask/src/config.rs` ausgeschlossen (siehe Issue #12).
+
 ## Release
 
 ```bash
@@ -50,9 +58,16 @@ just release 0.2.0
 
 1. Bumpt workspace version in root `Cargo.toml` (alle Sub-Crates erben)
 2. Commit + Tag + Push
-3. GitHub Actions erstellen automatisch:
-   - GitHub Release mit Changelog (nur aktueller Tag)
-   - PR in `fos_client` mit den Release Notes als Body
+3. GitHub Actions (`release.yml`) läuft automatisch:
+   - Tests + Coverage
+   - GitHub Release mit Changelog (nur aktueller Tag) + Coverage-Tabelle
+   - PR in `fos_client` mit chicken Release Notes als Body
+
+## fos_client Update (nach chicken Release)
+
+1. Automatischer PR landet in `fos_client` mit chicken Release Notes
+2. PR-Titel anpassen: "was merkt der User?" → wird der fos_client Changelog-Eintrag
+3. Squash and Merge
 
 ## Changelog
 
@@ -60,7 +75,7 @@ just release 0.2.0
 just changelog   # generiert CHANGELOG.md lokal (gitignored)
 ```
 
-Der Changelog wird automatisch bei jedem Release via GitHub Actions generiert.
+Wird automatisch bei jedem Release via GitHub Actions generiert.
 `chore(release)` Commits werden gefiltert und erscheinen nicht im Changelog.
 
 ## Workspace Version

@@ -45,12 +45,12 @@ pub mod address {
     //         trigger.respond(SessionResponse::Accepted);
     //     }
 
-    //     /// Get the local IP address of the server.
-    //     pub fn get_local_ip() -> Option<std::net::IpAddr> {
-    //         let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
-    //         socket.connect("8.8.8.8:80").ok()?;
-    //         socket.local_addr().ok().map(|addr| addr.ip())
-    //     }
+    /// Get the local IP address of the server.
+    pub fn get_local_ip() -> Option<std::net::IpAddr> {
+        let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+        socket.connect("8.8.8.8:80").ok()?;
+        socket.local_addr().ok().map(|addr| addr.ip())
+    }
 
     //     pub(super) fn _handle_server_reject_connection() {
     //         // TODO: client UUID or Name is on the server's blacklist

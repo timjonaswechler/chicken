@@ -95,8 +95,8 @@ jobs:
             --body "$(cat <<PREOF
           ## chicken ${NEW_TAG}
 
-          > ✏️ **Bitte ersetze diesen PR-Titel** mit einer aussagekräftigen Beschreibung was der User merkt.
-          > Beispiel: \`feat(multiplayer): add lobby browser\`
+          > ✏️ **Replace this PR title** with a meaningful description of what the user will notice.
+          > Example: \`feat(multiplayer): add lobby browser\`
 
           ### Änderungen in chicken
 

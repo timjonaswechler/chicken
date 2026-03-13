@@ -1,0 +1,159 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  release:
+    name: Test, Coverage & Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov,git-cliff
+
+      # ─── Tests ───────────────────────────────────────────────────────────────
+
+      - name: Run tests
+        run: cargo xtask test --ci
+
+      # ─── Coverage ────────────────────────────────────────────────────────────
+
+      - name: Generate coverage
+        run: |
+          cargo llvm-cov --package chicken_states --features hosted   --json --output-path cov-states-hosted.json
+          cargo llvm-cov --package chicken_states --features headless --json --output-path cov-states-headless.json
+          cargo llvm-cov --package chicken_protocols                  --json --output-path cov-protocols.json
+          cargo llvm-cov --package chicken_settings                   --json --output-path cov-settings.json
+
+      - name: Build coverage table
+        id: coverage
+        run: |
+          TABLE="| Crate | Feature | Lines | Functions | Branches |\n|-------|---------|-------|-----------|----------|\n"
+          for file in cov-*.json; do
+            name=$(basename "$file" .json | sed 's/cov-//')
+            lines=$(jq -r '.data[0].totals.lines.percent // 0 | . * 10 | round | . / 10' "$file")
+            funcs=$(jq -r '.data[0].totals.functions.percent // 0 | . * 10 | round | . / 10' "$file")
+            branches=$(jq -r '.data[0].totals.branches.percent // 0 | . * 10 | round | . / 10' "$file")
+            crate=$(echo "$name" | cut -d- -f1-2 | sed 's/-/ /g')
+            feat=$(echo "$name" | cut -d- -f3)
+            TABLE="${TABLE}| $crate | ${feat:--} | ${lines}% | ${funcs}% | ${branches}% |\n"
+          done
+          echo "table<<EOF" >> $GITHUB_OUTPUT
+          printf "$TABLE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      # ─── GitHub Release ───────────────────────────────────────────────────────
+
+      - name: Generate release notes
+        run: |
+          git-cliff --config cliff.toml --latest --strip header --output RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "## Code Coverage" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          printf "${{ steps.coverage.outputs.table }}" >> RELEASE_NOTES.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: RELEASE_NOTES.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ─── Notify fos_client ───────────────────────────────────────────────────
+
+      - name: Get current chicken tag in fos_client
+        id: current
+        env:
+          GH_TOKEN: ${{ secrets.FOC_CLIENT_TOKEN }}
+        run: |
+          CARGO_TOML=$(gh api repos/timjonaswechler/fos_client/contents/Cargo.toml \
+            --jq '.content' | base64 -d)
+          CURRENT_TAG=$(echo "$CARGO_TOML" | grep -oP 'tag = "\Kv[^"]+')
+          echo "current-tag=$CURRENT_TAG" >> $GITHUB_OUTPUT
+          echo "Current chicken tag in fos_client: $CURRENT_TAG"
+
+      - name: Generate PR release notes
+        id: pr_notes
+        run: |
+          NEW_TAG="${{ github.ref_name }}"
+          CURRENT_TAG="${{ steps.current.outputs.current-tag }}"
+
+          if [ -z "$CURRENT_TAG" ]; then
+            NOTES=$(git cliff --config cliff.toml "$NEW_TAG" --strip header)
+          else
+            NOTES=$(git cliff --config cliff.toml "$CURRENT_TAG".."$NEW_TAG" --strip header)
+          fi
+
+          {
+            echo "notes<<EOF"
+            echo "$NOTES"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Checkout fos_client
+        uses: actions/checkout@v4
+        with:
+          repository: timjonaswechler/fos_client
+          token: ${{ secrets.FOC_CLIENT_TOKEN }}
+          path: fos_client
+
+      - name: Create PR in fos_client
+        env:
+          GH_TOKEN: ${{ secrets.FOC_CLIENT_TOKEN }}
+        run: |
+          NEW_TAG="${{ github.ref_name }}"
+          BRANCH="chore/update-chicken-${NEW_TAG}"
+
+          cd fos_client
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "$BRANCH"
+
+          sed -i "s|chicken = { git = \"https://github.com/timjonaswechler/chicken\", tag = \"v[^\"]*\" }|chicken = { git = \"https://github.com/timjonaswechler/chicken\", tag = \"${NEW_TAG}\" }|" Cargo.toml
+
+          git add Cargo.toml
+          git commit -m "chore(deps): update chicken to ${NEW_TAG}"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --repo timjonaswechler/fos_client \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore(deps): update chicken to ${NEW_TAG}" \
+            --body "$(cat <<PREOF
+          ## chicken ${NEW_TAG}
+
+          > ✏️ **Replace this PR title** with a meaningful description of what the user will notice.
+          > Example: \`feat(multiplayer): add lobby browser\`
+
+          ### Changes in chicken
+
+          ${{ steps.pr_notes.outputs.notes }}
+          PREOF
+          )"

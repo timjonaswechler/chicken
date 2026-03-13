@@ -12,7 +12,7 @@ env:
 
 jobs:
   test:
-    name: Test
+    name: Test & Coverage
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -20,9 +20,47 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
 
       - name: Cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Run all tests
+      - name: Install tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Run tests
         run: cargo xtask test --ci
+
+      - name: Generate coverage
+        run: |
+          cargo llvm-cov --package chicken_states --features hosted   --json --output-path cov-states-hosted.json
+          cargo llvm-cov --package chicken_states --features headless --json --output-path cov-states-headless.json
+          cargo llvm-cov --package chicken_protocols                  --json --output-path cov-protocols.json
+          cargo llvm-cov --package chicken_settings                   --json --output-path cov-settings.json
+
+      - name: Write coverage summary
+        run: |
+          echo "## Code Coverage" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Crate | Feature | Lines | Functions | Branches |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|---------|-------|-----------|----------|" >> $GITHUB_STEP_SUMMARY
+
+          for file in cov-*.json; do
+            name=$(basename "$file" .json | sed 's/cov-//')
+            lines=$(jq -r '.data[0].totals.lines.percent // 0 | . * 10 | round | . / 10' "$file")
+            funcs=$(jq -r '.data[0].totals.functions.percent // 0 | . * 10 | round | . / 10' "$file")
+            branches=$(jq -r '.data[0].totals.branches.percent // 0 | . * 10 | round | . / 10' "$file")
+            crate=$(echo "$name" | cut -d- -f1-2 | sed 's/-/ /g')
+            feat=$(echo "$name" | cut -d- -f3)
+            echo "| $crate | ${feat:--} | ${lines}% | ${funcs}% | ${branches}% |" >> $GITHUB_STEP_SUMMARY
+          done
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: cov-*.json
+          retention-days: 7

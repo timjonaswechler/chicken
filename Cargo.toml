@@ -19,6 +19,7 @@ members = [
 default-members = ["crates/chicken"]
 
 [workspace.package]
+version = "0.1.0"
 publish = false
 edition = "2024"
 license = "MIT"

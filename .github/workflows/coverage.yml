@@ -1,0 +1,62 @@
+name: Coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Generate coverage (hosted)
+        run: |
+          cargo llvm-cov --package chicken_states \
+            --features hosted \
+            --lcov --output-path coverage-hosted.lcov
+
+      - name: Generate coverage (headless)
+        run: |
+          cargo llvm-cov --package chicken_states \
+            --features headless \
+            --lcov --output-path coverage-headless.lcov
+
+      - name: Generate coverage (other crates)
+        run: |
+          cargo llvm-cov --package chicken_protocols \
+            --lcov --output-path coverage-protocols.lcov
+          cargo llvm-cov --package chicken_settings \
+            --lcov --output-path coverage-settings.lcov
+
+      - name: Upload coverage summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: coverage-*.lcov
+          retention-days: 7
+
+      - name: Coverage summary in GitHub Actions
+        run: |
+          cargo llvm-cov report --package chicken_states --features hosted --summary-only
+          cargo llvm-cov report --package chicken_states --features headless --summary-only

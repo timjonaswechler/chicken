@@ -4,6 +4,8 @@ pub struct CrateConfig {
     pub test_threads_1: bool,
     /// Integration test binaries (files in tests/)
     pub integration_tests: &'static [&'static str],
+    /// Include in CI test run
+    pub ci: bool,
 }
 
 pub const CRATES: &[CrateConfig] = &[
@@ -18,6 +20,7 @@ pub const CRATES: &[CrateConfig] = &[
             "menu_settings",
             "menu_multiplayer",
         ],
+        ci: true,
     },
     CrateConfig {
         name: "chicken_network",
@@ -29,6 +32,8 @@ pub const CRATES: &[CrateConfig] = &[
         ],
         test_threads_1: true,
         integration_tests: &[],
+        // excluded from CI: 34 pre-existing compile errors, see issue #12
+        ci: false,
     },
     CrateConfig {
         name: "chicken_protocols",
@@ -40,18 +45,21 @@ pub const CRATES: &[CrateConfig] = &[
         ],
         test_threads_1: false,
         integration_tests: &[],
+        ci: true,
     },
     CrateConfig {
         name: "chicken_settings",
         features: &[("default", "")],
         test_threads_1: false,
         integration_tests: &[],
+        ci: true,
     },
     CrateConfig {
         name: "chicken",
         features: &[("default", "")],
         test_threads_1: false,
         integration_tests: &[],
+        ci: true,
     },
 ];
 

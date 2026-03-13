@@ -71,6 +71,8 @@ fn run_tests(
 ) -> Result<()> {
     let jobs: Vec<TestJob> = if interactive && !ci {
         build_jobs_interactive()?
+    } else if ci {
+        build_jobs_ci()
     } else {
         build_jobs(crate_arg, features_arg, module)
     };
@@ -104,6 +106,33 @@ fn run_tests(
         std::process::exit(1);
     }
     Ok(())
+}
+
+fn build_jobs_ci() -> Vec<TestJob> {
+    let mut jobs = vec![];
+    for cfg in CRATES.iter().filter(|c| c.ci) {
+        for (_, feat) in cfg.features.iter() {
+            // Unit tests
+            jobs.push(TestJob {
+                crate_name: cfg.name.to_string(),
+                features: feat.to_string(),
+                test_threads_1: cfg.test_threads_1,
+                integration_test: None,
+                module: None,
+            });
+            // All integration tests
+            for &it in cfg.integration_tests.iter() {
+                jobs.push(TestJob {
+                    crate_name: cfg.name.to_string(),
+                    features: feat.to_string(),
+                    test_threads_1: cfg.test_threads_1,
+                    integration_test: Some(it.to_string()),
+                    module: None,
+                });
+            }
+        }
+    }
+    jobs
 }
 
 fn build_jobs(

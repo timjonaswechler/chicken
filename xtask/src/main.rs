@@ -180,9 +180,6 @@ fn generate_coverage_reports(jobs: &[TestJob]) -> Result<()> {
             .arg("--json")
             .arg("--output-path").arg(&filename)
             .arg("-p").arg(crate_name);
-        if !features.is_empty() {
-            cmd.arg("--features").arg(features);
-        }
 
         println!("Report: {filename}");
         let status = cmd.status()?;

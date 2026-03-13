@@ -1,11 +1,12 @@
 mod config;
 mod runner;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
 use config::{CRATES, find_crate};
 use inquire::{InquireError, MultiSelect, Select, Text};
 use runner::{TestJob, run_job};
+use std::process::Command;
 
 #[derive(Parser)]
 #[command(name = "cargo xtask", about = "Dev task runner for chicken")]
@@ -16,6 +17,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Task {
+    /// Create a new release: bump workspace version, commit, tag, push
+    Release {
+        /// Version to release (e.g. 0.2.0 or v0.2.0)
+        version: String,
+    },
     /// Run tests
     Test {
         /// Crate to test (omit for all)
@@ -49,6 +55,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse_from(args);
 
     match cli.command {
+        Task::Release { version } => release(version),
         Task::Test { crate_name, features, module, interactive, ci } => {
             run_tests(crate_name, features, module, interactive, ci)
         }
@@ -324,4 +331,69 @@ fn build_jobs_from_answers(selected_crates: &[usize], answers: &[CrateAnswers]) 
         }
     }
     Ok(jobs)
+}
+
+// ─── Release ─────────────────────────────────────────────────────────────────
+
+fn release(version: String) -> Result<()> {
+    let version = version.trim_start_matches('v');
+
+    // Validate semver format x.y.z
+    let parts: Vec<&str> = version.split('.').collect();
+    if parts.len() < 3 || parts.iter().any(|p| p.parse::<u32>().is_err()) {
+        bail!("Invalid version: '{}'. Expected format: x.y.z (e.g. 0.2.0)", version);
+    }
+
+    let tag = format!("v{}", version);
+
+    // Read current workspace version from root Cargo.toml
+    let cargo_toml = std::fs::read_to_string("Cargo.toml")?;
+    let current = cargo_toml
+        .lines()
+        .find(|l| l.trim().starts_with("version = "))
+        .and_then(|l| l.split('"').nth(1))
+        .unwrap_or("unknown");
+
+    println!("Current: {} → New: {}", current, version);
+
+    // Check working tree is clean
+    let status = cmd("git", &["status", "--porcelain"])?;
+    if !status.trim().is_empty() {
+        bail!("Working tree is dirty. Commit or stash changes first.");
+    }
+
+    // Bump workspace version in root Cargo.toml
+    let updated = cargo_toml.replacen(
+        &format!("version = \"{}\"", current),
+        &format!("version = \"{}\"", version),
+        1,
+    );
+    std::fs::write("Cargo.toml", updated)?;
+
+    // Commit
+    cmd("git", &["add", "Cargo.toml"])?;
+    cmd("git", &["commit", "-m", &format!("chore(release): {}", tag)])?;
+
+    // Tag
+    cmd("git", &["tag", &tag])?;
+
+    // Push
+    cmd("git", &["push", "origin", "main"])?;
+    cmd("git", &["push", "origin", &tag])?;
+
+    println!("✅ Released {} — changelog and fos_client PR will be created automatically", tag);
+    Ok(())
+}
+
+fn cmd(program: &str, args: &[&str]) -> Result<String> {
+    let output = Command::new(program).args(args).output()?;
+    if !output.status.success() {
+        bail!(
+            "{} {} failed:\n{}",
+            program,
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }

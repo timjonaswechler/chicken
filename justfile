@@ -11,5 +11,8 @@ doc *args:
 
 
 
+release version:
+    cargo xtask release {{version}}
+
 test *args:
     cargo xtask test {{args}}

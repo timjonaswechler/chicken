@@ -9,6 +9,7 @@ authors.workspace = true
 
 [dependencies]
 bevy = {workspace=true, features= ["bevy_log", "bevy_state", "keyboard"]}
+chicken_exitcodes = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 aquamarine = { workspace = true }
 

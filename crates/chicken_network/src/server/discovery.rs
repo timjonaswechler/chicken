@@ -50,6 +50,7 @@ fn setup_discovery_socket(settings: Res<NetworkingSettings>) -> DiscoverySocket 
 
 fn discovery_server_system(socket: Res<DiscoverySocket>, settings: Res<NetworkingSettings>) {
     let mut buf = [0u8; 256];
+    // TODO: do we have really to!?
     // alle eingehenden Pakete abarbeiten
     while let Ok((len, src)) = socket.0.recv_from(&mut buf) {
         if &buf[..len] == MAGIC {

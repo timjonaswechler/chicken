@@ -3,8 +3,9 @@ use {
     aeronet_channel::{ChannelIo, ChannelIoPlugin},
     aeronet_webtransport::server::{WebTransportServer, WebTransportServerClient},
     bevy::{ecs::query::QuerySingleError, prelude::*},
+    chicken_notifications::Notify,
     chicken_states::{
-        events::session::{SetServerShutdownStep, SetServerStartupStep},
+        events::session::{SetGoingPublicStep, SetServerShutdownStep, SetServerStartupStep},
         logic::session::server::PendingGoingPublic,
         states::session::{ServerShutdownStep, ServerStartupStep, ServerStatus, ServerVisibility},
     },
@@ -45,146 +46,173 @@ pub(crate) struct LocalServerPlugin;
 impl Plugin for LocalServerPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(ChannelIoPlugin)
-            .add_systems(OnEnter(ServerStatus::Starting), server_starting)
-            .add_systems(OnEnter(ServerStatus::Running), server_running)
+            .add_systems(OnEnter(ServerStartupStep::Init), server_starting_init)
             .add_systems(
                 Update,
-                server_stopping.run_if(in_state(ServerStatus::Stopping)),
+                server_starting_load_world.run_if(in_state(ServerStartupStep::LoadWorld)),
             );
+
+        #[cfg(feature = "client")]
+        app.add_systems(
+            OnEnter(ServerStartupStep::SpawnEntities),
+            server_starting_spawn_entities,
+        );
+
+        app.add_systems(OnEnter(ServerStartupStep::Ready), server_starting_ready)
+            .add_systems(OnEnter(ServerStatus::Running), server_running)
+            .add_systems(
+                OnEnter(ServerShutdownStep::SaveWorld),
+                server_stopping_save_world,
+            )
+            .add_systems(
+                Update,
+                server_stopping_disconnect_clients
+                    .run_if(in_state(ServerShutdownStep::DisconnectClients)),
+            );
+
+        #[cfg(feature = "client")]
+        app.add_systems(
+            Update,
+            server_stopping_despawn_local_client
+                .run_if(in_state(ServerShutdownStep::DespawnLocalClient)),
+        )
+        .add_systems(
+            Update,
+            server_stopping_cleanup.run_if(in_state(ServerShutdownStep::Cleanup)),
+        )
+        .add_systems(OnEnter(ServerShutdownStep::Ready), server_stopping_ready);
     }
 }
 
-fn server_starting(
+fn server_starting_init(mut commands: Commands) {
+    commands.spawn((Name::new("Local Server"), LocalSession, LocalServer));
+    commands.trigger(SetServerStartupStep::Next);
+}
+
+fn server_starting_load_world(
     mut commands: Commands,
-    step: Res<State<ServerStartupStep>>,
     server_query: Query<Entity, (With<LocalServer>, With<LocalSession>)>,
-    client_query: Query<Entity, (With<LocalClient>, With<LocalSession>)>,
-    bot_query: Query<Entity, (With<LocalBot>, With<LocalSession>)>,
 ) {
-    match step.get() {
-        ServerStartupStep::Init => {
-            commands.spawn((Name::new("Local Server"), LocalSession, LocalServer));
-
-            match server_query.single() {
-                Ok(_) => commands.trigger(SetServerStartupStep::Next),
-                Err(QuerySingleError::NoEntities(_)) => {
-                    error!("Error: There is no LocalServer right now!");
-                    todo!("Handle this Error properly");
-                }
-                Err(QuerySingleError::MultipleEntities(_)) => {
-                    error!("Error: There is more than one LocalServer!");
-                    todo!("Handle this Error properly");
-                }
-            }
+    match server_query.single() {
+        Ok(_) => commands.trigger(SetServerStartupStep::Next),
+        Err(QuerySingleError::NoEntities(_)) => {
+            commands.trigger(Notify::error(
+                "There is no LocalServer right now! - this is a bug",
+            ));
+            commands.trigger(SetServerStartupStep::Failed);
+            return;
         }
-
-        ServerStartupStep::LoadWorld => commands.trigger(SetServerStartupStep::Next),
-
-        ServerStartupStep::SpawnEntities => {
-            #[cfg(feature = "client")]
-            let client_entity = commands
-                .spawn((Name::new("Local Client"), LocalSession, LocalClient))
-                .id();
-
-            #[cfg(feature = "client")]
-            let server = match server_query.single() {
-                Ok(server) => server,
-                Err(QuerySingleError::NoEntities(_)) => {
-                    error!("Error: No Server found!");
-                    commands.trigger(SetServerStartupStep::Failed);
-                    return;
-                }
-                Err(QuerySingleError::MultipleEntities(_)) => {
-                    error!("Error: There is more than one LocalServer!");
-                    commands.trigger(SetServerStartupStep::Failed);
-                    return;
-                }
-            };
-            #[cfg(feature = "client")]
-            commands.queue(ChannelIo::open(server, client_entity));
-
-            commands.trigger(SetServerStartupStep::Next);
-        }
-
-        ServerStartupStep::Ready => {
-            #[cfg(feature = "client")]
-            if client_query.count() == 1 {
-                commands.trigger(SetServerStartupStep::Done);
-            }
-
-            #[cfg(not(feature = "client"))]
-            if server_query.count() == 1 {
-                commands.trigger(SetServerStartupStep::Done);
-            }
+        Err(QuerySingleError::MultipleEntities(_)) => {
+            commands.trigger(Notify::error(
+                "There is more than one LocalServer! - this is a bug",
+            ));
+            commands.trigger(SetServerStartupStep::Failed);
+            return;
         }
     }
 }
 
-fn server_running(
-    marker: Option<Res<PendingGoingPublic>>,
-    mut next_visibility: ResMut<NextState<ServerVisibility>>,
+fn server_starting_spawn_entities(
     mut commands: Commands,
+    server_query: Query<Entity, (With<LocalServer>, With<LocalSession>)>,
 ) {
+    let client_entity = commands
+        .spawn((Name::new("Local Client"), LocalSession, LocalClient))
+        .id();
+
+    let server = match server_query.single() {
+        Ok(server) => server,
+        _ => {
+            commands.trigger(Notify::error(
+                "To spawn the local entity, no local server was found! - this is a bug",
+            ));
+            commands.trigger(SetServerStartupStep::Failed);
+            return;
+        }
+    };
+    commands.queue(ChannelIo::open(server, client_entity));
+    commands.trigger(SetServerStartupStep::Next);
+}
+
+fn server_starting_ready(
+    mut commands: Commands,
+    #[cfg(feature = "server")] server_query: Query<Entity, (With<LocalServer>, With<LocalSession>)>,
+    #[cfg(feature = "client")] client_query: Query<Entity, (With<LocalClient>, With<LocalSession>)>,
+    #[cfg(feature = "client")] bot_query: Query<Entity, (With<LocalBot>, With<LocalSession>)>,
+) {
+    #[cfg(feature = "client")]
+    if client_query.count() == 1 {
+        commands.trigger(SetServerStartupStep::Done);
+    }
+
+    #[cfg(feature = "server")]
+    if server_query.count() == 1 {
+        commands.trigger(SetServerStartupStep::Done);
+    }
+}
+
+fn server_running(marker: Option<Res<PendingGoingPublic>>, mut commands: Commands) {
     if marker.is_some() {
-        next_visibility.set(ServerVisibility::GoingPublic);
+        commands.trigger(SetGoingPublicStep::Start);
         commands.remove_resource::<PendingGoingPublic>();
         info!("Server automatically going public");
+        return;
     }
     info!("Local server started");
 }
 
-fn server_stopping(
+fn server_stopping_save_world(mut commands: Commands) {
+    commands.trigger(SetServerShutdownStep::Next);
+}
+
+fn server_stopping_disconnect_clients(
     mut commands: Commands,
-    step: Res<State<ServerShutdownStep>>,
-    server_query: Query<Entity, With<WebTransportServer>>,
     client_query: Query<Entity, With<WebTransportServerClient>>,
+) {
+    for client in &client_query {
+        commands.trigger(Disconnect::new(client, "Singleplayer closing"));
+    }
+    if client_query.is_empty() {
+        commands.trigger(SetServerShutdownStep::Next);
+    }
+}
+
+fn server_stopping_despawn_local_client(
+    mut commands: Commands,
     local_client_query: Query<Entity, With<LocalClient>>,
     local_bot_query: Query<Entity, With<LocalBot>>,
-    local_server_query: Query<Entity, With<LocalServer>>,
 ) {
-    match step.get() {
-        ServerShutdownStep::SaveWorld => {
-            commands.trigger(SetServerShutdownStep::Next);
-        }
-
-        ServerShutdownStep::DisconnectClients => {
-            for client in &client_query {
-                commands.trigger(Disconnect::new(client, "Singleplayer closing"));
-            }
-            if client_query.is_empty() {
-                commands.trigger(SetServerShutdownStep::Next);
-            }
-        }
-
-        ServerShutdownStep::DespawnLocalClient => {
-            for bot in &local_bot_query {
-                if let Ok(mut bot_entity) = commands.get_entity(bot) {
-                    bot_entity.despawn();
-                }
-            }
-            if let Ok(client_entity) = local_client_query.single() {
-                if let Ok(mut client_entity) = commands.get_entity(client_entity) {
-                    client_entity.despawn();
-                }
-            } else if local_client_query.is_empty() && local_bot_query.is_empty() {
-                commands.trigger(SetServerShutdownStep::Next);
-            }
-        }
-
-        ServerShutdownStep::Cleanup => {
-            //TODO: Go through it and  create a clean structure
-            if let Ok(server_entity) = server_query.single() {
-                commands.trigger(Close::new(server_entity, "Singleplayer closing"));
-            } else if let Ok(server_entity) = local_server_query.single() {
-                if let Ok(mut server_entity) = commands.get_entity(server_entity) {
-                    server_entity.despawn();
-                }
-            } else if server_query.is_empty() && local_server_query.is_empty() {
-                commands.trigger(SetServerShutdownStep::Next);
-            }
-        }
-        ServerShutdownStep::Ready => {
-            commands.trigger(SetServerShutdownStep::Done);
+    for bot in &local_bot_query {
+        if let Ok(mut bot_entity) = commands.get_entity(bot) {
+            bot_entity.despawn();
         }
     }
+    if let Ok(client_entity) = local_client_query.single() {
+        if let Ok(mut client_entity) = commands.get_entity(client_entity) {
+            client_entity.despawn();
+        }
+    } else if local_client_query.is_empty() && local_bot_query.is_empty() {
+        commands.trigger(SetServerShutdownStep::Next);
+    }
+}
+
+fn server_stopping_cleanup(
+    mut commands: Commands,
+    server_query: Query<Entity, With<WebTransportServer>>,
+    local_server_query: Query<Entity, With<LocalServer>>,
+) {
+    //TODO: Go through it and  create a clean structure
+    if let Ok(server_entity) = server_query.single() {
+        commands.trigger(Close::new(server_entity, "Singleplayer closing"));
+    } else if let Ok(server_entity) = local_server_query.single() {
+        if let Ok(mut server_entity) = commands.get_entity(server_entity) {
+            server_entity.despawn();
+        }
+    } else if server_query.is_empty() && local_server_query.is_empty() {
+        commands.trigger(SetServerShutdownStep::Next);
+    }
+}
+
+fn server_stopping_ready(mut commands: Commands) {
+    commands.trigger(SetServerShutdownStep::Done);
 }

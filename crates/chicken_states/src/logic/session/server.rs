@@ -2,7 +2,10 @@
 use crate::states::app::AppScope;
 
 #[cfg(feature = "headless")]
-use bevy::{app::AppExit, prelude::MessageWriter};
+use {
+    bevy::{app::AppExit, prelude::MessageWriter},
+    chicken_exitcodes::ExitCode,
+};
 
 use {
     crate::{
@@ -14,7 +17,7 @@ use {
             ServerStartupStep, ServerStatus, ServerVisibility, SessionState, SessionType,
         },
     },
-    bevy::prelude::{warn, App, AppExtStates, NextState, On, Plugin, Res, ResMut, Resource, State},
+    bevy::prelude::{App, AppExtStates, NextState, On, Plugin, Res, ResMut, Resource, State, warn},
 };
 
 pub struct ServerSessionPlugin;
@@ -119,83 +122,101 @@ pub(crate) fn is_valid_startup_step_transition(
     from: &ServerStartupStep,
     to: &SetServerStartupStep,
 ) -> bool {
-    matches!(
+    let valid = matches!(
         (from, to),
         (ServerStartupStep::Init, SetServerStartupStep::Next)
             | (ServerStartupStep::LoadWorld, SetServerStartupStep::Next)
-            | (ServerStartupStep::SpawnEntities, SetServerStartupStep::Next)
             | (ServerStartupStep::Ready, SetServerStartupStep::Done)
             | (_, SetServerStartupStep::Failed)
-    )
+    );
+
+    #[cfg(feature = "hosted")]
+    let valid = valid
+        || matches!(
+            (from, to),
+            (ServerStartupStep::SpawnEntities, SetServerStartupStep::Next)
+        );
+
+    valid
 }
 
 fn on_server_startup_step(
     event: On<SetServerStartupStep>,
+    current_parent: Res<State<ServerStatus>>,
     current: Option<Res<State<ServerStartupStep>>>,
-    mut next_server_status: Option<ResMut<NextState<ServerStatus>>>,
+    mut next_server_status: ResMut<NextState<ServerStatus>>,
     mut next_startup_step: Option<ResMut<NextState<ServerStartupStep>>>,
     mut next_session_type: ResMut<NextState<SessionType>>,
     #[cfg(feature = "hosted")] mut next_app_scope: ResMut<NextState<AppScope>>,
     #[cfg(feature = "headless")] mut exit_writer: MessageWriter<AppExit>,
 ) {
-    // ServerStartupStep only exists when ServerStatus = Starting
-    let current = match current {
-        Some(c) => *c.get(),
-        None => {
-            warn!("ServerStartupStep does not exist - ServerStatus must be Starting first");
-            return;
-        }
-    };
-
-    if !is_valid_startup_step_transition(&current, event.event()) {
+    // Validate parent state transition
+    if !is_valid_server_status_startup_transition(current_parent.get(), event.event()) {
         warn!(
-            "Invalid ServerStartupStep transition: {:?} -> {:?}",
-            current,
-            event.event()
+            "Invalid ServerStatus transition for ServerStartupStep: {:?} with parent status {:?}",
+            event.event(),
+            current_parent.get()
         );
         return;
     }
 
-    match (current, event.event()) {
-        (ServerStartupStep::Init, SetServerStartupStep::Next) => {
-            if let Some(ref mut next_step) = next_startup_step {
-                next_step.set(ServerStartupStep::LoadWorld);
-            }
-        }
-        (ServerStartupStep::LoadWorld, SetServerStartupStep::Next) => {
-            if let Some(ref mut next_step) = next_startup_step {
-                next_step.set(ServerStartupStep::SpawnEntities);
-            }
-        }
-        (ServerStartupStep::SpawnEntities, SetServerStartupStep::Next) => {
-            if let Some(ref mut next_step) = next_startup_step {
-                next_step.set(ServerStartupStep::Ready);
-            }
-        }
-        (ServerStartupStep::Ready, SetServerStartupStep::Done) => {
-            if let Some(ref mut s) = next_server_status {
-                s.set(ServerStatus::Running);
-            }
-        }
-        (_, SetServerStartupStep::Failed) => {
+    match *event.event() {
+        SetServerStartupStep::Failed => {
             #[cfg(feature = "hosted")]
             {
-                if let Some(ref mut s) = next_server_status {
-                    s.set(ServerStatus::Offline);
-                }
+                next_server_status.set(ServerStatus::Offline);
                 next_session_type.set(SessionType::None);
                 next_app_scope.set(AppScope::Menu);
-                // TODO: Notification Error
             }
             #[cfg(feature = "headless")]
             {
-                // No Offline state in headless — binary exits on failure
-                exit_writer.write(AppExit::error());
-                // TODO: Log Error
-                // TODO: Proper Error Code in AppExit
+                exit_writer.write(ExitCode::ServerStartupFailed.into());
             }
         }
-        _ => {}
+        _ => {
+            let current = match current {
+                Some(c) => *c.get(),
+                None => {
+                    warn!("ServerStartupStep does not exist - ServerStatus must be Starting first");
+                    return;
+                }
+            };
+
+            if !is_valid_startup_step_transition(&current, event.event()) {
+                warn!(
+                    "Invalid ServerStartupStep transition: {:?} -> {:?}",
+                    current,
+                    event.event()
+                );
+                return;
+            }
+
+            match (current, event.event()) {
+                (ServerStartupStep::Init, SetServerStartupStep::Next) => {
+                    if let Some(ref mut next_step) = next_startup_step {
+                        next_step.set(ServerStartupStep::LoadWorld);
+                    }
+                }
+                (ServerStartupStep::LoadWorld, SetServerStartupStep::Next) => {
+                    if let Some(ref mut next_step) = next_startup_step {
+                        #[cfg(feature = "hosted")]
+                        next_step.set(ServerStartupStep::SpawnEntities);
+                        #[cfg(feature = "headless")]
+                        next_step.set(ServerStartupStep::Ready);
+                    }
+                }
+                #[cfg(feature = "hosted")]
+                (ServerStartupStep::SpawnEntities, SetServerStartupStep::Next) => {
+                    if let Some(ref mut next_step) = next_startup_step {
+                        next_step.set(ServerStartupStep::Ready);
+                    }
+                }
+                (ServerStartupStep::Ready, SetServerStartupStep::Done) => {
+                    next_server_status.set(ServerStatus::Running);
+                }
+                _ => {}
+            }
+        }
     }
 }
 
@@ -281,7 +302,19 @@ fn on_server_shutdown_step(
                 next_step.set(ServerShutdownStep::SaveWorld);
             }
         }
-        // Next/Done/Failed: ServerShutdownStep muss existieren (Status muss Stopping sein)
+        SetServerShutdownStep::Failed => {
+            #[cfg(feature = "hosted")]
+            {
+                next_server_status.set(ServerStatus::Offline);
+                next_session_type.set(SessionType::None);
+                next_app_scope.set(AppScope::Menu);
+            }
+            #[cfg(feature = "headless")]
+            {
+                exit_writer.write(ExitCode::ServerShutdownFailed.into());
+            }
+        }
+        // Next/Done: ServerShutdownStep muss existieren (Status muss Stopping sein)
         _ => {
             let current = match current {
                 Some(c) => *c.get(), // Kopieren statt Referenz behalten
@@ -338,24 +371,7 @@ fn on_server_shutdown_step(
 
                     #[cfg(feature = "headless")]
                     {
-                        // No Offline state in headless — binary exits on successful shutdown
                         exit_writer.write(AppExit::Success);
-                    }
-                }
-                (_, SetServerShutdownStep::Failed) => {
-                    #[cfg(feature = "hosted")]
-                    {
-                        next_server_status.set(ServerStatus::Offline);
-                        next_session_type.set(SessionType::None);
-                        next_app_scope.set(AppScope::Menu);
-                        // TODO: Notification Error
-                    }
-                    #[cfg(feature = "headless")]
-                    {
-                        // No Offline state in headless — binary exits on failure
-                        exit_writer.write(AppExit::error());
-                        // TODO: Log Error
-                        // TODO: Proper Error Code in AppExit
                     }
                 }
                 _ => {}
@@ -370,6 +386,7 @@ fn on_going_public_step(
     current: Option<Res<State<GoingPublicStep>>>,
     mut next_visibility: ResMut<NextState<ServerVisibility>>,
     mut next_public_step: Option<ResMut<NextState<GoingPublicStep>>>,
+    #[cfg(feature = "headless")] mut exit_writer: MessageWriter<AppExit>,
 ) {
     // Validate parent state transition
     if !is_valid_server_visibility_public_transition(current_parent.get(), event.event()) {
@@ -389,7 +406,19 @@ fn on_going_public_step(
                 next_step.set(GoingPublicStep::Validating);
             }
         }
-        // Next/Done/Failed: GoingPublicStep muss existieren
+        SetGoingPublicStep::Failed => {
+            #[cfg(feature = "hosted")]
+            {
+                next_visibility.set(ServerVisibility::Private);
+                return;
+            }
+            #[cfg(feature = "headless")]
+            {
+                exit_writer.write(ExitCode::ServerGoingPublicFailed.into());
+                return;
+            }
+        }
+        // Next/Done: GoingPublicStep muss existieren
         _ => {
             let current = match current {
                 Some(c) => *c.get(),
@@ -430,9 +459,6 @@ fn on_going_public_step(
                 (GoingPublicStep::Ready, SetGoingPublicStep::Done) => {
                     next_visibility.set(ServerVisibility::Public);
                 }
-                (_, SetGoingPublicStep::Failed) => {
-                    next_visibility.set(ServerVisibility::Private);
-                }
                 _ => {}
             }
         }
@@ -445,6 +471,7 @@ fn on_going_private_step(
     current: Option<Res<State<GoingPrivateStep>>>,
     mut next_visibility: ResMut<NextState<ServerVisibility>>,
     mut next_private_step: Option<ResMut<NextState<GoingPrivateStep>>>,
+    #[cfg(feature = "headless")] mut exit_writer: MessageWriter<AppExit>,
 ) {
     // Validate parent state transition
     if !is_valid_server_visibility_private_transition(current_parent.get(), event.event()) {
@@ -464,7 +491,20 @@ fn on_going_private_step(
                 next_step.set(GoingPrivateStep::DisconnectingClients);
             }
         }
-        // Next/Done/Failed: GoingPrivateStep muss existieren
+        SetGoingPrivateStep::Failed => {
+            #[cfg(feature = "hosted")]
+            {
+                // TODO: dont know if this is the correct behavior for hosted
+                next_visibility.set(ServerVisibility::Private);
+            }
+            #[cfg(feature = "headless")]
+            {
+                // TODO: dont know if we need this?!
+                exit_writer.write(ExitCode::ServerGoingPrivateFailed.into());
+                return;
+            }
+        }
+        // Next/Done: GoingPrivateStep muss existieren
         _ => {
             let current = match current {
                 Some(c) => *c.get(),
@@ -505,10 +545,7 @@ fn on_going_private_step(
                 (GoingPrivateStep::Ready, SetGoingPrivateStep::Done) => {
                     next_visibility.set(ServerVisibility::Private);
                 }
-                (_, SetGoingPrivateStep::Failed) => {
-                    // Handle failure - stay at current visibility or go back to Private
-                    next_visibility.set(ServerVisibility::Private);
-                }
+
                 _ => {}
             }
         }

@@ -202,7 +202,14 @@ pub fn handle_client_chat(
 
         // TODO: Command-Parsing via extract_command() implementieren
         if extract_command(text).is_some() {
-            todo!("Chat-Commands sind noch nicht implementiert");
+            error_events.write(ToClients {
+                mode: SendMode::Direct(*client_id),
+                message: ServerChatError {
+                    error_type: ChatErrorType::UnknownCommand,
+                    message: "Chat-Commands sind noch nicht implementiert.".to_string(),
+                },
+            });
+            continue;
         }
 
         let identity = chat_identities.0.get(&client_id);

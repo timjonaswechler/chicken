@@ -240,16 +240,17 @@ pub enum ClientConnectionStatus {
 #[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Reflect)]
 #[source(ClientConnectionStatus = ClientConnectionStatus::Connecting)]
 pub enum ConnectingStep {
-    /// Resolve the server address (DNS or IP).
+    /// WebTransport connection is being established (DNS, QUIC, TLS).
+    /// Advances to `Authenticating` once the network session exists (`On<Add, Session>`).
     #[default]
-    ResolveAddress,
-    /// Open a socket connection to the server.
-    OpenSocket,
-    /// Send the initial handshake packet.
-    SendHandshake,
-    /// Wait for server acceptance response.
-    WaitForAccept,
-    /// Connection fully established.
+    OpeningConnection,
+    /// Session open. Client sends identity/auth token to the server.
+    /// TODO: replace auto-advance with real server accept message.
+    Authenticating,
+    /// Server is validating the client's identity/auth.
+    /// TODO: replace auto-advance with server-side accept/reject response.
+    WaitingForAccept,
+    /// Server accepted the client. Transitioning to `Connected`.
     Ready,
 }
 

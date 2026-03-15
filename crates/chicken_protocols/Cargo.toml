@@ -20,7 +20,7 @@ serde = { workspace = true, features = ["derive"] }
 
 [features]
 default = []
-server = ["bevy_replicon/server", "dep:chicken_states", "chicken_states/headless"]
+server = ["bevy_replicon/server", "dep:chicken_states"]
 client = ["bevy_replicon/client"]
 
 [lints]

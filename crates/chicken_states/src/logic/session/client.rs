@@ -147,10 +147,9 @@ pub(crate) fn is_valid_connecting_step_transition(
 ) -> bool {
     matches!(
         (from, to),
-        (ConnectingStep::ResolveAddress, SetConnectingStep::Next)
-            | (ConnectingStep::OpenSocket, SetConnectingStep::Next)
-            | (ConnectingStep::SendHandshake, SetConnectingStep::Next)
-            | (ConnectingStep::WaitForAccept, SetConnectingStep::Next)
+        (ConnectingStep::OpeningConnection, SetConnectingStep::Next)
+            | (ConnectingStep::Authenticating, SetConnectingStep::Next)
+            | (ConnectingStep::WaitingForAccept, SetConnectingStep::Next)
             | (ConnectingStep::Ready, SetConnectingStep::Done)
             | (_, SetConnectingStep::Failed)
     )
@@ -240,22 +239,17 @@ fn on_connecting_step(
             }
 
             match (current, event.event()) {
-                (ConnectingStep::ResolveAddress, SetConnectingStep::Next) => {
+                (ConnectingStep::OpeningConnection, SetConnectingStep::Next) => {
                     if let Some(ref mut next_step) = next_connecting_step {
-                        next_step.set(ConnectingStep::OpenSocket);
+                        next_step.set(ConnectingStep::Authenticating);
                     }
                 }
-                (ConnectingStep::OpenSocket, SetConnectingStep::Next) => {
+                (ConnectingStep::Authenticating, SetConnectingStep::Next) => {
                     if let Some(ref mut next_step) = next_connecting_step {
-                        next_step.set(ConnectingStep::SendHandshake);
+                        next_step.set(ConnectingStep::WaitingForAccept);
                     }
                 }
-                (ConnectingStep::SendHandshake, SetConnectingStep::Next) => {
-                    if let Some(ref mut next_step) = next_connecting_step {
-                        next_step.set(ConnectingStep::WaitForAccept);
-                    }
-                }
-                (ConnectingStep::WaitForAccept, SetConnectingStep::Next) => {
+                (ConnectingStep::WaitingForAccept, SetConnectingStep::Next) => {
                     if let Some(ref mut next_step) = next_connecting_step {
                         next_step.set(ConnectingStep::Ready);
                     }
@@ -551,7 +545,7 @@ mod tests {
             assert_eq!(session_type.get(), &SessionType::Client);
 
             let connecting_step = app.world().resource::<State<ConnectingStep>>();
-            assert_eq!(connecting_step.get(), &ConnectingStep::ResolveAddress);
+            assert_eq!(connecting_step.get(), &ConnectingStep::OpeningConnection);
         }
 
         /// Führt den Verbindungsprozess fort
@@ -974,9 +968,9 @@ mod tests {
         /// Test: Gültige ConnectingStep-Übergänge werden als gültig erkannt.
         #[test]
         fn test_valid_connecting_step_transitions() {
-            // ResolveAddress → Next ist gültig
+            // OpeningConnection → Next ist gültig
             assert!(is_valid_connecting_step_transition(
-                &ConnectingStep::ResolveAddress,
+                &ConnectingStep::OpeningConnection,
                 &SetConnectingStep::Next
             ));
 
@@ -988,7 +982,7 @@ mod tests {
 
             // Jeder Step → Failed ist gültig
             assert!(is_valid_connecting_step_transition(
-                &ConnectingStep::ResolveAddress,
+                &ConnectingStep::OpeningConnection,
                 &SetConnectingStep::Failed
             ));
         }
@@ -1056,27 +1050,21 @@ mod tests {
                 &SetConnectingStep::Next
             ));
 
-            // ResolveAddress → Done ist ungültig (Noch nicht bereit)
+            // OpeningConnection → Done ist ungültig (Noch nicht bereit)
             assert!(!is_valid_connecting_step_transition(
-                &ConnectingStep::ResolveAddress,
+                &ConnectingStep::OpeningConnection,
                 &SetConnectingStep::Done
             ));
 
-            // OpenSocket → Done ist ungültig (Noch nicht bereit)
+            // Authenticating → Done ist ungültig (Noch nicht bereit)
             assert!(!is_valid_connecting_step_transition(
-                &ConnectingStep::OpenSocket,
+                &ConnectingStep::Authenticating,
                 &SetConnectingStep::Done
             ));
 
-            // SendHandshake → Done ist ungültig (Noch nicht bereit)
+            // WaitingForAccept → Done ist ungültig (Noch nicht bereit)
             assert!(!is_valid_connecting_step_transition(
-                &ConnectingStep::SendHandshake,
-                &SetConnectingStep::Done
-            ));
-
-            // WaitForAccept → Done ist ungültig (Noch nicht bereit)
-            assert!(!is_valid_connecting_step_transition(
-                &ConnectingStep::WaitForAccept,
+                &ConnectingStep::WaitingForAccept,
                 &SetConnectingStep::Done
             ));
         }

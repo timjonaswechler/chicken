@@ -162,7 +162,7 @@ fn on_server_startup_step(
             }
             #[cfg(feature = "headless")]
             {
-                exit_writer.write(AppExit::Error(ExitCode::ServerStartupFailed.nonzero()));
+                exit_writer.write(ExitCode::ServerStartupFailed.into());
             }
         }
         _ => {
@@ -299,7 +299,7 @@ fn on_server_shutdown_step(
             }
             #[cfg(feature = "headless")]
             {
-                exit_writer.write(AppExit::Error(ExitCode::ServerShutdownFailed.nonzero()));
+                exit_writer.write(ExitCode::ServerShutdownFailed.into());
             }
         }
         // Next/Done: ServerShutdownStep muss existieren (Status muss Stopping sein)
@@ -402,7 +402,7 @@ fn on_going_public_step(
             }
             #[cfg(feature = "headless")]
             {
-                exit_writer.write(AppExit::Error(ExitCode::ServerGoingPublicFailed.nonzero()));
+                exit_writer.write(ExitCode::ServerGoingPublicFailed.into());
                 return;
             }
         }
@@ -488,7 +488,7 @@ fn on_going_private_step(
             #[cfg(feature = "headless")]
             {
                 // TODO: dont know if we need this?!
-                exit_writer.write(AppExit::Error(ExitCode::ServerGoingPrivateFailed.nonzero()));
+                exit_writer.write(ExitCode::ServerGoingPrivateFailed.into());
                 return;
             }
         }

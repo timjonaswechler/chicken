@@ -1,4 +1,4 @@
-use std::num::NonZeroU8;
+use {bevy::app::AppExit, std::num::NonZeroU8};
 
 /// Process exit codes for the entire Chicken ecosystem.
 ///
@@ -15,6 +15,12 @@ pub enum ExitCode {
     ServerShutdownFailed = 3,
     ServerGoingPublicFailed = 4,
     ServerGoingPrivateFailed = 5,
+}
+
+impl From<ExitCode> for AppExit {
+    fn from(code: ExitCode) -> Self {
+        AppExit::Error(code.nonzero())
+    }
 }
 
 impl ExitCode {

@@ -1,5 +1,8 @@
 #[cfg(feature = "hosted")]
-use crate::states::app::AppScope;
+use {
+    crate::states::app::AppScope,
+    bevy::prelude::{ButtonInput, IntoScheduleConfigs, KeyCode, SystemCondition, Update, in_state},
+};
 
 #[cfg(feature = "headless")]
 use {
@@ -37,6 +40,13 @@ impl Plugin for ServerSessionPlugin {
             .add_observer(on_server_shutdown_step)
             .add_observer(on_going_public_step)
             .add_observer(on_going_private_step);
+
+        #[cfg(feature = "hosted")]
+        app.add_systems(
+            Update,
+            toggle_pause_menu
+                .run_if(in_state(SessionState::Active).or(in_state(SessionState::Paused))),
+        );
     }
 }
 
@@ -147,6 +157,7 @@ fn on_server_startup_step(
     mut next_server_status: ResMut<NextState<ServerStatus>>,
     mut next_startup_step: Option<ResMut<NextState<ServerStartupStep>>>,
     mut next_session_type: ResMut<NextState<SessionType>>,
+    mut next_session_state: ResMut<NextState<SessionState>>,
     #[cfg(feature = "hosted")] mut next_app_scope: ResMut<NextState<AppScope>>,
     #[cfg(feature = "headless")] mut exit_writer: MessageWriter<AppExit>,
 ) {
@@ -213,6 +224,7 @@ fn on_server_startup_step(
                 }
                 (ServerStartupStep::Ready, SetServerStartupStep::Done) => {
                     next_server_status.set(ServerStatus::Running);
+                    next_session_state.set(SessionState::Active);
                 }
                 _ => {}
             }
@@ -548,6 +560,21 @@ fn on_going_private_step(
 
                 _ => {}
             }
+        }
+    }
+}
+
+#[cfg(feature = "hosted")]
+fn toggle_pause_menu(
+    current_state: Res<State<SessionState>>,
+    mut next_state: ResMut<NextState<SessionState>>,
+    keys: Res<ButtonInput<KeyCode>>,
+) {
+    if keys.just_pressed(KeyCode::Escape) {
+        match current_state.get() {
+            SessionState::Active => next_state.set(SessionState::Paused),
+            SessionState::Paused => next_state.set(SessionState::Active),
+            _ => {}
         }
     }
 }

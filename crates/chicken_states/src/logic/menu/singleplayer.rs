@@ -3,7 +3,9 @@ use {
         events::menu::singleplayer::{
             SetSingleplayerMenu, SetSingleplayerNewGame, SetSingleplayerSavedGame,
         },
+        events::app::SetAppScope,
         states::{
+            app::AppScope,
             menu::{
                 main::MainMenuScreen,
                 singleplayer::{NewGameMenuScreen, SavedGameMenuScreen, SingleplayerMenuScreen},
@@ -11,7 +13,7 @@ use {
             session::{ServerStatus, SessionType},
         },
     },
-    bevy::prelude::{App, AppExtStates, NextState, On, Plugin, Res, ResMut, State, warn},
+    bevy::prelude::{App, AppExtStates, Commands, NextState, On, Plugin, Res, ResMut, State, warn},
 };
 
 pub(super) struct SingleplayerMenuPlugin;
@@ -238,6 +240,7 @@ fn on_set_singleplayer_menu(
 /// Handles SetSingleplayerNewGame events.
 fn on_set_singleplayer_new_game(
     event: On<SetSingleplayerNewGame>,
+    mut commands: Commands,
     current_parent: Res<State<SingleplayerMenuScreen>>,
     current: Option<Res<State<NewGameMenuScreen>>>,
     mut next_singleplayer: ResMut<NextState<SingleplayerMenuScreen>>,
@@ -278,6 +281,7 @@ fn on_set_singleplayer_new_game(
             }
             next_session_type.set(SessionType::Singleplayer);
             next_server_status.set(ServerStatus::Starting);
+            commands.trigger(SetAppScope::Session);
         }
         // Next/Previous: Navigate through config steps
         _ => {
@@ -325,6 +329,7 @@ fn on_set_singleplayer_new_game(
 /// Handles SetSingleplayerSavedGame events.
 fn on_set_singleplayer_saved_game(
     event: On<SetSingleplayerSavedGame>,
+    mut commands: Commands,
     current_parent: Res<State<SingleplayerMenuScreen>>,
     current: Option<Res<State<SavedGameMenuScreen>>>,
     mut next_singleplayer: ResMut<NextState<SingleplayerMenuScreen>>,
@@ -351,6 +356,7 @@ fn on_set_singleplayer_saved_game(
         SetSingleplayerSavedGame::Confirm => {
             next_session_type.set(SessionType::Singleplayer);
             next_server_status.set(ServerStatus::Starting);
+            commands.trigger(SetAppScope::Session);
         }
         // Next: Only one state, validate but effectively a no-op
         _ => {

@@ -1,7 +1,8 @@
 use {
     crate::{
-        events::menu::multiplayer::{
-            SetJoinGame, SetMultiplayerMenu, SetNewHostGame, SetSavedHostGame,
+        events::{
+            app::SetAppScope,
+            menu::multiplayer::{SetJoinGame, SetMultiplayerMenu, SetNewHostGame, SetSavedHostGame},
         },
         logic::session::server::PendingGoingPublic,
         states::{
@@ -293,6 +294,7 @@ fn on_set_new_host_game(
             next_session_type.set(SessionType::Singleplayer);
             next_server_status.set(ServerStatus::Starting);
             commands.insert_resource(PendingGoingPublic);
+            commands.trigger(SetAppScope::Session);
         }
 
         _ => {
@@ -381,6 +383,7 @@ fn on_set_saved_host_game(
             next_session_type.set(SessionType::Singleplayer);
             next_server_status.set(ServerStatus::Starting);
             commands.insert_resource(PendingGoingPublic);
+            commands.trigger(SetAppScope::Session);
         }
         _ => {
             let current = match current {

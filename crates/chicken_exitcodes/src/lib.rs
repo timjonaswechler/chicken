@@ -11,12 +11,10 @@ use std::num::NonZeroU8;
 pub enum ExitCode {
     /// Unclassified fatal error (fallback).
     GenericFatal = 1,
-
-    /// Configuration is invalid or missing.
-    ConfigInvalid = 10,
-
-    /// Failed to bind network port (e.g. port in use / insufficient permissions).
-    BindPortFailed = 20,
+    ServerStartupFailed = 2,
+    ServerShutdownFailed = 3,
+    ServerGoingPublicFailed = 4,
+    ServerGoingPrivateFailed = 5,
 }
 
 impl ExitCode {
@@ -33,8 +31,16 @@ impl ExitCode {
     pub const fn description(self) -> &'static str {
         match self {
             ExitCode::GenericFatal => "Generic fatal error",
-            ExitCode::ConfigInvalid => "Invalid configuration",
-            ExitCode::BindPortFailed => "Failed to bind network port",
+            ExitCode::ServerStartupFailed => {
+                "Server startup process failed. Read logs for details."
+            }
+            ExitCode::ServerShutdownFailed => "Server shutdown failed. Read logs for details.",
+            ExitCode::ServerGoingPublicFailed => {
+                "Server going public failed. Read logs for details."
+            }
+            ExitCode::ServerGoingPrivateFailed => {
+                "Server going private failed. Read logs for details."
+            }
         }
     }
 }

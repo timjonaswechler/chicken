@@ -113,7 +113,6 @@ pub enum ServerStatus {
 ///
 /// When a server transitions to `Starting`, it progresses through
 /// these steps to ensure proper initialization of all server components.
-#[cfg(any(feature = "hosted", feature = "headless"))]
 #[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Reflect)]
 #[source(ServerStatus = ServerStatus::Starting)]
 pub enum ServerStartupStep {

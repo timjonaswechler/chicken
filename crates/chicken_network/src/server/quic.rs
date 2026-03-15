@@ -1,5 +1,5 @@
 use {
-    super::networking::ports,
+    super::networking::{address::helpers::accept_session_request, ports},
     aeronet::io::{connection::Disconnect, server::Close},
     aeronet_replicon::server::AeronetRepliconServer,
     aeronet_webtransport::{
@@ -119,10 +119,8 @@ fn server_going_public_starting_server(
 
     commands
         .spawn((Name::new("WebTransportServer"), AeronetRepliconServer))
-        .queue(WebTransportServer::open(config));
-    // .observe(on_server_is_public)
-    // .observe(on_server_session_request)
-    // .observe(on_server_client_disconnected);
+        .queue(WebTransportServer::open(config))
+        .observe(accept_session_request);
 
     commands.trigger(SetGoingPublicStep::Next);
 }

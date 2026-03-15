@@ -10,6 +10,9 @@ use {
     std::collections::{HashMap, VecDeque},
 };
 
+#[cfg(feature = "server")]
+use chicken_states::states::session::ServerStatus;
+
 // ─── Konstanten ──────────────────────────────────────────────────────────────
 
 /// Server-seitige maximale Chat-History im RAM
@@ -39,6 +42,22 @@ impl Plugin for ProtocolPlugin {
             .add_server_message::<ServerChatHistoryResponse>(Channel::Ordered)
             .add_server_message::<ServerChatError>(Channel::Ordered)
             .add_server_message::<ServerChatAutocomplete>(Channel::Ordered);
+
+        #[cfg(feature = "server")]
+        app.add_systems(
+            Update,
+            (
+                handle_client_chat_identity,
+                handle_client_chat,
+                handle_client_chat_history_request,
+            )
+                .chain()
+                .run_if(in_state(ServerStatus::Running)),
+        )
+        .add_systems(
+            Update,
+            broadcast_autocomplete_data.run_if(in_state(ServerStatus::Running)),
+        );
     }
 }
 
@@ -100,7 +119,6 @@ pub struct ServerChatAutocomplete {
 pub enum ChatErrorType {
     MessageTooLong,
     EmptyMessage,
-    RateLimited,
     UnknownCommand,
 }
 
@@ -180,6 +198,11 @@ pub fn handle_client_chat(
                 },
             });
             continue;
+        }
+
+        // TODO: Command-Parsing via extract_command() implementieren
+        if extract_command(text).is_some() {
+            todo!("Chat-Commands sind noch nicht implementiert");
         }
 
         let identity = chat_identities.0.get(&client_id);
@@ -296,10 +319,7 @@ pub fn extract_mentions(text: &str) -> Vec<&str> {
 
 /// Filtert die Chat-History für einen bestimmten Spieler:
 /// Priorisiert @mentions, füllt mit neuesten Nachrichten auf bis `CHAT_CLIENT_HISTORY_SIZE`.
-fn filter_relevant_chat_history(
-    history: &VecDeque<ServerChat>,
-    own_name: &str,
-) -> Vec<ServerChat> {
+fn filter_relevant_chat_history(history: &VecDeque<ServerChat>, own_name: &str) -> Vec<ServerChat> {
     let mention = format!("{}{}", CHAT_MENTION_PREFIX, own_name);
 
     let mut mentioned: Vec<&ServerChat> = history

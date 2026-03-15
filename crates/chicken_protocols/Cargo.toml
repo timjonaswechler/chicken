@@ -13,14 +13,15 @@ bevy = { workspace = true,  features = ["serialize","bevy_log"] }
 bevy_replicon = { workspace = true }
 
 chicken_identity = { workspace = true }
+chicken_states = { workspace = true, optional = true }
 
 serde = { workspace = true, features = ["derive"] }
 
 
 [features]
 default = []
-server = ["bevy_replicon/server"]
-client = ["bevy_replicon/client"]
+server = ["bevy_replicon/server", "dep:chicken_states", "chicken_states/headless"]
+client = ["bevy_replicon/client", "dep:chicken_states", "chicken_states/hosted"]
 
 [lints]
 workspace = true

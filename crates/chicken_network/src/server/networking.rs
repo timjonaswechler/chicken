@@ -26,24 +26,17 @@ pub mod ports {
 }
 
 pub mod address {
-    // pub mod helpers {
-    //     use {
-    //         aeronet_webtransport::server::{SessionRequest, SessionResponse},
-    //         bevy::prelude::*,
-    //     };
+    pub mod helpers {
+        use {
+            aeronet_webtransport::server::{SessionRequest, SessionResponse},
+            bevy::prelude::*,
+        };
 
-    //     pub(super) fn handle_server_accept_connection(
-    //         client: Entity,
-    //         server: Entity,
-    //         mut trigger: On<SessionRequest>,
-    //     ) {
-    //         info!("{client} connecting to {server} with headers:");
-    //         for (header_key, header_value) in &trigger.headers {
-    //             info!("  {header_key}: {header_value}");
-    //         }
-
-    //         trigger.respond(SessionResponse::Accepted);
-    //     }
+        pub fn accept_session_request(mut trigger: On<SessionRequest>) {
+            // TODO: hier später Blacklist/Whitelist-Prüfung, Passwort, Server-voll-Check
+            trigger.respond(SessionResponse::Accepted);
+        }
+    }
 
     /// Get the local IP address of the server.
     pub fn get_local_ip() -> Option<std::net::IpAddr> {

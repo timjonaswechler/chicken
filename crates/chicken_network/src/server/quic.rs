@@ -21,6 +21,7 @@ pub(crate) struct QUICServerPlugin;
 impl Plugin for QUICServerPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(WebTransportServerPlugin)
+            .add_observer(accept_session_request)
             .add_systems(
                 OnEnter(GoingPublicStep::Validating),
                 server_going_public_validating,
@@ -119,8 +120,7 @@ fn server_going_public_starting_server(
 
     commands
         .spawn((Name::new("WebTransportServer"), AeronetRepliconServer))
-        .queue(WebTransportServer::open(config))
-        .observe(accept_session_request);
+        .queue(WebTransportServer::open(config));
 
     commands.trigger(SetGoingPublicStep::Next);
 }

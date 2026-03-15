@@ -122,14 +122,22 @@ pub(crate) fn is_valid_startup_step_transition(
     from: &ServerStartupStep,
     to: &SetServerStartupStep,
 ) -> bool {
-    matches!(
+    let valid = matches!(
         (from, to),
         (ServerStartupStep::Init, SetServerStartupStep::Next)
             | (ServerStartupStep::LoadWorld, SetServerStartupStep::Next)
-            | (ServerStartupStep::SpawnEntities, SetServerStartupStep::Next)
             | (ServerStartupStep::Ready, SetServerStartupStep::Done)
             | (_, SetServerStartupStep::Failed)
-    )
+    );
+
+    #[cfg(feature = "hosted")]
+    let valid = valid
+        || matches!(
+            (from, to),
+            (ServerStartupStep::SpawnEntities, SetServerStartupStep::Next)
+        );
+
+    valid
 }
 
 fn on_server_startup_step(
@@ -191,9 +199,13 @@ fn on_server_startup_step(
                 }
                 (ServerStartupStep::LoadWorld, SetServerStartupStep::Next) => {
                     if let Some(ref mut next_step) = next_startup_step {
+                        #[cfg(feature = "hosted")]
                         next_step.set(ServerStartupStep::SpawnEntities);
+                        #[cfg(feature = "headless")]
+                        next_step.set(ServerStartupStep::Ready);
                     }
                 }
+                #[cfg(feature = "hosted")]
                 (ServerStartupStep::SpawnEntities, SetServerStartupStep::Next) => {
                     if let Some(ref mut next_step) = next_startup_step {
                         next_step.set(ServerStartupStep::Ready);

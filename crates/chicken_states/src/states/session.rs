@@ -121,7 +121,8 @@ pub enum ServerStartupStep {
     Init,
     /// Loading world data and map generation.
     LoadWorld,
-    /// Spawning all game entities.
+    /// Spawning local game entities (hosted builds only — not needed on dedicated server).
+    #[cfg(feature = "hosted")]
     SpawnEntities,
     /// Server is fully ready to accept connections.
     Ready,

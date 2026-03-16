@@ -57,14 +57,19 @@ fn on_client_disconnected(
     mut commands: Commands,
 ) {
     match state.get() {
-        ClientConnectionStatus::Syncing | ClientConnectionStatus::Connected => {
-            on_client_receive_disconnect(&trigger.reason, &mut commands);
+        ClientConnectionStatus::Connected | ClientConnectionStatus::Syncing => {
+            notify_disconnect(&trigger.reason, &mut commands);
+            commands.trigger(SetConnectingStep::Failed);
+        }
+        ClientConnectionStatus::Playing => {
+            notify_disconnect(&trigger.reason, &mut commands);
+            commands.trigger(SetDisconnectingStep::Start);
         }
         _ => {}
     }
 }
 
-fn on_client_receive_disconnect(reason: &DisconnectReason, commands: &mut Commands) {
+fn notify_disconnect(reason: &DisconnectReason, commands: &mut Commands) {
     match reason {
         DisconnectReason::ByPeer(msg) => {
             info!("Server closed connection: {msg}");
@@ -74,10 +79,8 @@ fn on_client_receive_disconnect(reason: &DisconnectReason, commands: &mut Comman
             error!("Connection lost: {err}");
             commands.trigger(Notify::error(format!("Connection lost: {err}")));
         }
-        DisconnectReason::ByUser(_) => return,
+        DisconnectReason::ByUser(_) => {}
     }
-
-    commands.trigger(SetConnectingStep::Failed);
 }
 
 /// ClientTarget is the data structure which the user selected or putted in a text field
@@ -273,10 +276,7 @@ fn on_client_connected(
 /// `OpeningConnection` is driven by `on_client_connected` (On<Add, Session>).
 /// `Authenticating` and `WaitingForAccept` are placeholder auto-advances until
 /// a real server accept/reject message is implemented (see TODO in ConnectingStep).
-fn advance_connecting_steps(
-    step: Option<Res<State<ConnectingStep>>>,
-    mut commands: Commands,
-) {
+fn advance_connecting_steps(step: Option<Res<State<ConnectingStep>>>, mut commands: Commands) {
     let Some(step) = step else { return };
 
     match step.get() {

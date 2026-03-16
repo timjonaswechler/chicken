@@ -1,3 +1,12 @@
+//! High-level application scope state.
+//!
+//! Defines [`AppScope`], the top-level Bevy state that determines whether the application
+//! is in the splash screen, main menu, or an active game session. All other state machines
+//! (menu navigation, session lifecycle) are substates or computed states derived from this root state.
+//!
+//! - Hosted builds start in `Splash` and progress to `Menu` after the intro sequence.
+//! - Headless (dedicated server) builds start directly in `Session`.
+
 use bevy::prelude::{Reflect, States};
 
 /// The high-level context of the application.

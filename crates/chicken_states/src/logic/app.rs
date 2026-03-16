@@ -1,3 +1,10 @@
+//! Application scope transition logic.
+//!
+//! Provides [`AppLogicPlugin`] which registers the `AppScope` state and sets up
+//! the splash screen timer system. Handles `SetAppScope` events to validate and
+//! execute transitions between Splash, Menu, and Session scopes, and processes
+//! application exit requests.
+
 use {
     crate::states::app::AppScope,
     bevy::prelude::{App, AppExtStates, Plugin},
@@ -19,7 +26,11 @@ use {
         },
     },
 };
-
+/// Plugin that manages high-level application state transitions.
+///
+/// Registers `AppScope` state, initializes the splash screen timer,
+/// and sets up the observer for `SetAppScope` events. Also initializes
+/// `SessionType` and `SessionState` for both hosted and headless builds.
 pub struct AppLogicPlugin;
 
 impl Plugin for AppLogicPlugin {

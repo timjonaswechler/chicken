@@ -1,3 +1,11 @@
+//! Wiki/help menu screen states.
+//!
+//! Defines the documentation browser state [`WikiMenuScreen`] which tracks
+//! the current documentation section: Overview, Creatures, Weapons, or Armor.
+//!
+//! The wiki allows free navigation between categories without returning to Overview,
+//! making it easy to browse different documentation sections sequentially.
+
 use {
     crate::states::menu::main::MainMenuScreen,
     bevy::prelude::{Reflect, StateSet, SubStates},

@@ -1,3 +1,13 @@
+//! Singleplayer menu screen states.
+//!
+//! Defines states for singleplayer game setup:
+//! - [`SingleplayerMenuScreen`]: Top-level singleplayer navigation (Overview, NewGame, LoadGame)
+//! - [`NewGameMenuScreen`]: Step-by-step new game creation workflow
+//! - [`SavedGameMenuScreen`]: Save file selection for loading
+//!
+//! These substates nest under `MainMenuScreen::Singleplayer` and guide users through
+//! configuring and starting singleplayer sessions.
+
 use {
     crate::states::menu::main::MainMenuScreen,
     bevy::prelude::{Reflect, StateSet, SubStates},

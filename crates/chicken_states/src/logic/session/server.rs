@@ -1,4 +1,14 @@
 #![cfg(any(feature = "hosted", feature = "headless"))]
+//! Server session lifecycle and visibility management.
+//!
+//! Handles the complete server lifecycle from startup through shutdown:
+//! - Startup sequence: Init → LoadWorld → SpawnEntities (hosted only) → Ready → Running
+//! - Shutdown sequence: SaveWorld → DisconnectClients → DespawnLocalClient (hosted only) → Cleanup → Ready
+//! - Visibility transitions: Private ↔ GoingPublic/Public ↔ GoingPrivate
+//!
+//! Works with both hosted builds (singleplayer/multiplayer host with UI) and
+//! headless dedicated servers. On failure, hosted builds return to the menu while
+//! headless servers trigger a process exit.
 
 #[cfg(feature = "hosted")]
 use {
@@ -24,7 +34,12 @@ use {
     },
     bevy::prelude::{App, AppExtStates, NextState, On, Plugin, Res, ResMut, Resource, State, warn},
 };
-
+/// Plugin that manages the server session lifecycle and visibility state machine.
+///
+/// Registers `ServerStatus`, `ServerStartupStep`, `ServerShutdownStep`, `ServerVisibility`,
+/// `GoingPublicStep`, and `GoingPrivateStep` substates. Sets up observers for all server
+/// lifecycle events and handles failure recovery — returning hosted builds to the menu
+/// or triggering process exit for headless builds.
 pub struct ServerSessionPlugin;
 
 impl Plugin for ServerSessionPlugin {

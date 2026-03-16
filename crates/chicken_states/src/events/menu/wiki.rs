@@ -1,3 +1,12 @@
+//! Wiki/help menu navigation events.
+//!
+//! Events for browsing the in-game documentation:
+//! - Navigate between documentation categories: Overview, Creatures, Weapons, Armor
+//! - Return to the main menu
+//!
+//! Unlike settings, wiki navigation allows free movement between categories
+//! without returning to overview. Processed by the `logic::menu::wiki` observers.
+
 use bevy::prelude::Event;
 
 /// Events for navigating within the wiki/help menu.

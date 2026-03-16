@@ -1,3 +1,14 @@
+//! Multiplayer menu screen states.
+//!
+//! Defines states for multiplayer game setup:
+//! - [`MultiplayerMenuScreen`]: Top-level multiplayer navigation (Overview, HostNewGame, HostSavedGame, JoinGame)
+//! - [`HostNewGameMenuScreen`]: New multiplayer server configuration steps
+//! - [`HostSavedGameMenuScreen`]: Existing save hosting workflow
+//! - [`JoinGameMenuScreen`]: Server browser and connection interface
+//!
+//! These substates nest under `MainMenuScreen::Multiplayer` and handle both
+//! hosting and joining multiplayer sessions.
+
 use {
     crate::states::menu::main::MainMenuScreen,
     bevy::prelude::{Reflect, StateSet, SubStates},

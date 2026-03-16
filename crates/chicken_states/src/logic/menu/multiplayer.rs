@@ -1,8 +1,17 @@
+//! Multiplayer menu navigation logic.
+//!
+//! Handles state transitions for the multiplayer setup workflows:
+//! - Navigation between multiplayer overview, host new/saved game, and join game screens
+//! - Confirmation events that initialize a session and transition to the game
+//! - Validation of all transitions to ensure proper navigation flow
+
 use {
     crate::{
         events::{
             app::SetAppScope,
-            menu::multiplayer::{SetJoinGame, SetMultiplayerMenu, SetNewHostGame, SetSavedHostGame},
+            menu::multiplayer::{
+                SetJoinGame, SetMultiplayerMenu, SetNewHostGame, SetSavedHostGame,
+            },
         },
         logic::session::server::PendingGoingPublic,
         states::{
@@ -20,6 +29,12 @@ use {
     bevy::prelude::{App, AppExtStates, Commands, NextState, On, Plugin, Res, ResMut, State, warn},
 };
 
+/// Plugin that manages multiplayer menu state transitions.
+///
+/// Registers `MultiplayerMenuScreen`, `HostNewGameMenuScreen`, `HostSavedGameMenuScreen`,
+/// and `JoinGameMenuScreen` substates. Sets up observers for `SetMultiplayerMenu`,
+/// `SetNewHostGame`, `SetSavedHostGame`, and `SetJoinGame` events to handle navigation
+/// between multiplayer setup flows and initiate game sessions on confirmation.
 pub(super) struct MultiplayerMenuPlugin;
 
 impl Plugin for MultiplayerMenuPlugin {

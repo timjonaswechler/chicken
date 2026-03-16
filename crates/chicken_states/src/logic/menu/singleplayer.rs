@@ -1,11 +1,19 @@
+//! Singleplayer menu navigation logic.
+//!
+//! Handles state transitions for the singleplayer setup workflows:
+//! - Navigation between singleplayer overview, new game creation, and save loading
+//! - Step-by-step progression through new game configuration
+//! - Validation of all transitions to ensure proper navigation flow
+
 use {
     crate::{
-        events::menu::singleplayer::{
-            SetSingleplayerMenu, SetSingleplayerNewGame, SetSingleplayerSavedGame,
+        events::{
+            app::SetAppScope,
+            menu::singleplayer::{
+                SetSingleplayerMenu, SetSingleplayerNewGame, SetSingleplayerSavedGame,
+            },
         },
-        events::app::SetAppScope,
         states::{
-            app::AppScope,
             menu::{
                 main::MainMenuScreen,
                 singleplayer::{NewGameMenuScreen, SavedGameMenuScreen, SingleplayerMenuScreen},
@@ -16,6 +24,11 @@ use {
     bevy::prelude::{App, AppExtStates, Commands, NextState, On, Plugin, Res, ResMut, State, warn},
 };
 
+/// Plugin that manages singleplayer menu state transitions.
+///
+/// Registers `SingleplayerMenuScreen`, `NewGameMenuScreen`, and `SavedGameMenuScreen` substates.
+/// Sets up observers for `SetSingleplayerMenu`, `SetSingleplayerNewGame`, and `SetSingleplayerSavedGame` events.
+/// Validates all transitions to ensure proper navigation flow between singleplayer setup screens.
 pub(super) struct SingleplayerMenuPlugin;
 
 impl Plugin for SingleplayerMenuPlugin {

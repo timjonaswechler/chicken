@@ -57,7 +57,9 @@ fn on_client_disconnected(
     mut commands: Commands,
 ) {
     match state.get() {
-        ClientConnectionStatus::Syncing | ClientConnectionStatus::Connected => {
+        ClientConnectionStatus::Connected
+        | ClientConnectionStatus::Syncing
+        | ClientConnectionStatus::Playing => {
             on_client_receive_disconnect(&trigger.reason, &mut commands);
         }
         _ => {}

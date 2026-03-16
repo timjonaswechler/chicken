@@ -32,7 +32,10 @@ pub mod states;
 
 use bevy::prelude::{App, Plugin};
 
-/// This plugin bundles all status management logic for the game.
+/// Main plugin that bundles all state management for the game.
+///
+/// Registers the app logic plugin and conditionally adds session plugins
+/// based on feature flags (`hosted` for client+UI, `headless` for dedicated server).
 pub struct ChickenStatePlugin;
 
 impl Plugin for ChickenStatePlugin {

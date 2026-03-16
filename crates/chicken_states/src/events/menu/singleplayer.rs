@@ -1,3 +1,12 @@
+//! Singleplayer menu navigation events.
+//!
+//! Events for controlling the singleplayer setup workflows:
+//! - [`SetSingleplayerMenu`]: Navigate between overview, new game, and load game screens
+//! - [`SetSingleplayerNewGame`]: Step through new game creation (player config, world config, save config)
+//! - [`SetSingleplayerSavedGame`]: Select and load existing save files
+//!
+//! Triggered by UI interactions and processed by the `logic::menu::singleplayer` observers.
+
 use bevy::prelude::Event;
 
 /// Events for navigating within the singleplayer setup menu.

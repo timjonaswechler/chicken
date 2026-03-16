@@ -1,3 +1,12 @@
+//! Main menu screen states.
+//!
+//! Defines the top-level menu navigation state [`MainMenuScreen`] which tracks
+//! the current section within the main menu: Overview, Singleplayer, Multiplayer,
+//! Wiki, or Settings.
+//!
+//! This is the root of the menu state hierarchy, with each variant having its own
+//! nested substates for detailed navigation within that section.
+
 use crate::states::app::AppScope;
 use bevy::prelude::{Reflect, StateSet, SubStates};
 /// Tracks the current section within the main menu.

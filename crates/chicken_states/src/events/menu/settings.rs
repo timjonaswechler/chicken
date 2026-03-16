@@ -1,3 +1,13 @@
+//! Settings menu navigation events.
+//!
+//! Events for navigating the settings configuration interface:
+//! - Navigate between settings categories: Overview, Audio, Video, Controls
+//! - Return to parent menu (Back)
+//! - Apply or discard configuration changes
+//!
+//! Settings events are processed by the `logic::menu::settings` observers
+//! which handle state transitions and coordinate with the settings system.
+
 use bevy::prelude::Event;
 
 /// Events for navigation and actions within the settings menu.

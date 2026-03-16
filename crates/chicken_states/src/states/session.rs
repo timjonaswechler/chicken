@@ -1,3 +1,14 @@
+//! Game session state definitions.
+//!
+//! Defines all state types that govern the in-game lifecycle:
+//! - [`SessionType`]: Whether the player is in singleplayer, multiplayer client, or dedicated server mode
+//! - [`SessionState`]: High-level session phase (Setup, Active, Paused)
+//! - [`ServerStatus`] / [`ServerStartupStep`] / [`ServerShutdownStep`]: Server lifecycle stages
+//! - [`ServerVisibility`] / [`GoingPublicStep`] / [`GoingPrivateStep`]: Multiplayer server visibility
+//! - [`ClientConnectionStatus`] / [`ConnectingStep`] / [`SyncingStep`] / [`DisconnectingStep`]: Client connection flow
+//! - [`PauseMenu`]: Pause menu navigation substates (hosted only)
+//! - [`PhysicsSimulation`]: Computed state derived from `SessionState` for physics system scheduling
+
 use {
     super::app::AppScope,
     bevy::prelude::{ComputedStates, Reflect, StateSet, States, SubStates},

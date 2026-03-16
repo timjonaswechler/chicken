@@ -1,3 +1,12 @@
+//! Settings menu navigation logic.
+//!
+//! Handles state transitions for the settings menu system:
+//! - Navigation between settings categories (Audio, Video, Controls)
+//! - Back navigation to main menu or settings overview
+//! - Apply and Cancel actions for settings changes
+//!
+//! Validates all transitions to ensure proper navigation flow within the settings menu.
+
 use {
     crate::{
         events::menu::settings::SetSettingsMenu,

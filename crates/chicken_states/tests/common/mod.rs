@@ -1,10 +1,12 @@
+#![allow(dead_code)]
+
 use bevy::{prelude::*, state::app::StatesPlugin};
 use chicken_states::{
+    ChickenStatePlugin,
     states::{
         app::AppScope,
         session::{ServerStartupStep, ServerStatus, SessionType},
     },
-    ChickenStatePlugin,
 };
 
 #[cfg(feature = "hosted")]
@@ -31,7 +33,6 @@ use chicken_states::{
     events::session::{SetConnectingStep, SetServerStartupStep, SetSyncingStep},
     states::session::{ClientConnectionStatus, ConnectingStep, SyncingStep},
 };
-
 
 pub fn test_app() -> App {
     let mut app = App::new();

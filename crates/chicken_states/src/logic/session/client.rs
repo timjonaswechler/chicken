@@ -1,3 +1,10 @@
+//! Client connection lifecycle and pause menu logic.
+//!
+//! Provides [`ClientSessionPlugin`] which registers all client-side substates and
+//! observers for connection flow events. Handles the full client lifecycle from
+//! initial connection through gameplay to clean disconnection, including pause menu
+//! navigation and Escape key handling during active sessions.
+
 use {
     crate::{
         events::session::{
@@ -13,11 +20,17 @@ use {
         },
     },
     bevy::prelude::{
-        in_state, warn, App, AppExtStates, ButtonInput, Commands, IntoScheduleConfigs, KeyCode,
-        NextState, On, Plugin, Res, ResMut, State, SystemCondition, Update,
+        App, AppExtStates, ButtonInput, Commands, IntoScheduleConfigs, KeyCode, NextState, On,
+        Plugin, Res, ResMut, State, SystemCondition, Update, in_state, warn,
     },
 };
 
+/// Plugin that manages client connection lifecycle and pause menu.
+///
+/// Registers `ClientConnectionStatus`, `ConnectingStep`, `SyncingStep`, `DisconnectingStep`,
+/// and `PauseMenu` substates. Sets up observers for connection flow events (`SetConnectingStep`,
+/// `SetSyncingStep`, `SetDisconnectingStep`) and pause menu navigation (`SetPauseMenu`).
+/// Also adds the Escape key system for toggling the pause menu during active sessions.
 pub struct ClientSessionPlugin;
 
 impl Plugin for ClientSessionPlugin {
@@ -200,7 +213,9 @@ fn on_connecting_step(
     let status = match current_parent {
         Some(ref s) => s.get(),
         None => {
-            warn!("SetConnectingStep fired but ClientConnectionStatus does not exist (wrong SessionType?)");
+            warn!(
+                "SetConnectingStep fired but ClientConnectionStatus does not exist (wrong SessionType?)"
+            );
             return;
         }
     };

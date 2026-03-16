@@ -1,3 +1,14 @@
+//! Game session control events.
+//!
+//! Defines events for managing the game session lifecycle:
+//! - Pause menu navigation (`SetPauseMenu`)
+//! - Server startup/shutdown sequences (`SetServerStartupStep`, `SetServerShutdownStep`)
+//! - Server visibility transitions (`SetGoingPublicStep`, `SetGoingPrivateStep`)
+//! - Client connection flow (`SetConnectingStep`, `SetSyncingStep`, `SetDisconnectingStep`)
+//!
+//! These events drive the state machines defined in [`crate::states::session`]
+//! and are processed by observers in [`crate::logic::session`].
+
 use bevy::prelude::Event;
 
 /// Events for actions in the in-game pause menu.

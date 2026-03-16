@@ -1,3 +1,14 @@
+//! Multiplayer menu navigation events.
+//!
+//! Events for controlling multiplayer setup workflows:
+//! - [`SetMultiplayerMenu`]: Navigate between overview, host new/saved game, and join game screens
+//! - [`SetNewHostGame`]: Step through new multiplayer server configuration
+//! - [`SetSavedHostGame`]: Select existing save and configure server settings
+//! - [`SetJoinGame`]: Connect to remote multiplayer servers
+//!
+//! Confirmation events trigger session initialization and transition to the game.
+//! Processed by the `logic::menu::multiplayer` observers.
+
 use bevy::prelude::Event;
 
 /// Events for navigating within the multiplayer setup menu.

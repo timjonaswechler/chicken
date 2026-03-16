@@ -1,4 +1,0 @@
-IdentityProvider 
-- Local 
-- Steam 
-- ...

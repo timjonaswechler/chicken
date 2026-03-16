@@ -1,3 +1,12 @@
+//! Settings menu screen states.
+//!
+//! Defines the settings configuration state [`SettingsMenuScreen`] which tracks
+//! the current settings category: Overview, Audio, Video, or Controls.
+//!
+//! Unlike other menu categories, settings requires returning to Overview before
+//! switching categories (except via Back/Apply/Cancel actions). This enforces
+//! a clear navigation pattern and proper handling of unsaved changes.
+
 use {
     crate::states::menu::main::MainMenuScreen,
     bevy::prelude::{Reflect, StateSet, SubStates},

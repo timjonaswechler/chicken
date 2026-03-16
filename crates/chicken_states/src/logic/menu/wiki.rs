@@ -1,3 +1,12 @@
+//! Wiki/help menu navigation logic.
+//!
+//! Handles state transitions for the in-game documentation browser:
+//! - Navigation between wiki categories (Creatures, Weapons, Armor)
+//! - Back navigation to main menu
+//!
+//! Provides free navigation between wiki categories without requiring
+//! return to the overview screen.
+
 use {
     crate::{
         events::menu::wiki::SetWikiMenu,

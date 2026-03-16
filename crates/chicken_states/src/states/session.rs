@@ -4,6 +4,7 @@ use {
 };
 
 /// Defines the type of session.
+#[cfg(any(feature = "hosted", feature = "headless"))]
 #[derive(States, Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Reflect)]
 pub enum SessionType {
     /// This is active if there is no active game running, for example when the game is in the main menu.
@@ -113,6 +114,7 @@ pub enum ServerStatus {
 ///
 /// When a server transitions to `Starting`, it progresses through
 /// these steps to ensure proper initialization of all server components.
+#[cfg(any(feature = "hosted", feature = "headless"))]
 #[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Reflect)]
 #[source(ServerStatus = ServerStatus::Starting)]
 pub enum ServerStartupStep {
@@ -132,6 +134,7 @@ pub enum ServerStartupStep {
 ///
 /// When a server transitions to `Stopping`, it progresses through
 /// these steps to ensure clean teardown of all session components.
+#[cfg(any(feature = "hosted", feature = "headless"))]
 #[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Reflect)]
 #[source(ServerStatus = ServerStatus::Stopping)]
 pub enum ServerShutdownStep {
@@ -156,6 +159,7 @@ pub enum ServerShutdownStep {
 /// Manages the server's presence in public server listings, including
 /// transitions between private and public states. The server can be
 /// private (invisible), public (listed), or in transition between these states.
+#[cfg(any(feature = "hosted", feature = "headless"))]
 #[derive(SubStates, Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Reflect)]
 #[source(ServerStatus = ServerStatus::Running)]
 pub enum ServerVisibility {
@@ -174,6 +178,7 @@ pub enum ServerVisibility {
 ///
 /// When a server transitions to `GoingPublic`, it progresses through
 /// these steps to register with discovery services and become publicly listed.
+#[cfg(any(feature = "hosted", feature = "headless"))]
 #[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Reflect)]
 #[source(ServerVisibility = ServerVisibility::GoingPublic)]
 pub enum GoingPublicStep {
@@ -192,6 +197,7 @@ pub enum GoingPublicStep {
 ///
 /// When a server transitions to `GoingPrivate`, it progresses through
 /// these steps to unregister from public listings and close public access.
+#[cfg(any(feature = "hosted", feature = "headless"))]
 #[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Reflect)]
 #[source(ServerVisibility = ServerVisibility::GoingPrivate)]
 pub enum GoingPrivateStep {

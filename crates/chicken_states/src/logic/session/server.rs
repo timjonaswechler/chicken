@@ -1,3 +1,5 @@
+#![cfg(any(feature = "hosted", feature = "headless"))]
+
 #[cfg(feature = "hosted")]
 use {
     crate::states::app::AppScope,

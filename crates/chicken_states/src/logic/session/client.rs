@@ -820,6 +820,37 @@ mod tests {
                 helpers::disconnecting_fail_at_step(&mut app, step);
             }
         }
+
+        /// Test: Unerwarteter Server-Disconnect aus Playing heraus (z.B. Server shutdown).
+        /// Playing -> SetDisconnectingStep::Start -> Disconnecting -> ... -> Menu
+        #[test]
+        fn test_unexpected_disconnect_from_playing() {
+            use crate::states::{app::AppScope, session::SessionType};
+            use bevy::prelude::State;
+            let mut app = helpers::setup_test_app_for_client();
+
+            // Zum Playing-State navigieren
+            helpers::start_connecting(&mut app);
+            helpers::connecting_next_step(&mut app, helpers::CONNECTING_STEPS);
+            helpers::start_syncing(&mut app);
+            helpers::syncing_next_step(&mut app, helpers::SYNCING_STEPS);
+
+            {
+                let status = app.world().resource::<State<ClientConnectionStatus>>();
+                assert_eq!(status.get(), &ClientConnectionStatus::Playing);
+            }
+
+            // Server-seitiger Disconnect: direkt Start triggern (kein vorheriges Start_disconnecting)
+            helpers::start_disconnecting(&mut app);
+            helpers::disconnecting_next_step(&mut app, helpers::DISCONNECTING_STEPS);
+
+            // Ergebnis: zurück im Menü
+            let app_scope = app.world().resource::<State<AppScope>>();
+            assert_eq!(app_scope.get(), &AppScope::Menu);
+
+            let session_type = app.world().resource::<State<SessionType>>();
+            assert_eq!(session_type.get(), &SessionType::None);
+        }
     }
 
     // =============================================================================

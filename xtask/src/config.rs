@@ -41,11 +41,7 @@ pub const CRATES: &[CrateConfig] = &[
     },
     CrateConfig {
         name: "chicken_protocols",
-        features: &[
-            ("default", ""),
-            ("hosted", "hosted"),
-            ("headless", "headless"),
-        ],
+        features: &[("hosted", "hosted"), ("headless", "headless")],
         test_threads_1: false,
         integration_tests: &[],
         ci: true,
@@ -59,7 +55,7 @@ pub const CRATES: &[CrateConfig] = &[
     },
     CrateConfig {
         name: "chicken",
-        features: &[("default", "")],
+        features: &[("hosted", "hosted")],
         test_threads_1: false,
         integration_tests: &[],
         ci: true,

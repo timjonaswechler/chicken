@@ -71,19 +71,19 @@ impl Plugin for ProtocolPlugin {
 // ─── Client → Server ─────────────────────────────────────────────────────────
 
 /// Nachricht, die ein Client an den Server sendet
-#[cfg(feature = "hosted")]
+#[cfg(any(feature = "hosted", feature = "headless"))]
 #[derive(Message, Serialize, Deserialize, Debug, Clone)]
 pub struct ClientChat {
     pub text: String,
 }
 
 /// Client fordert die Chat-History an (z.B. nach dem Verbinden)
-#[cfg(feature = "hosted")]
+#[cfg(any(feature = "hosted", feature = "headless"))]
 #[derive(Message, Serialize, Deserialize, Debug, Clone)]
 pub struct ClientChatHistoryRequest;
 
 /// Client meldet seinen Anzeigenamen und optionale Steam-ID
-#[cfg(feature = "hosted")]
+#[cfg(any(feature = "hosted", feature = "headless"))]
 #[derive(Message, Serialize, Deserialize, Debug, Clone)]
 pub struct ClientChatIdentity {
     pub name: String,
@@ -93,8 +93,8 @@ pub struct ClientChatIdentity {
 // ─── Server → Client ─────────────────────────────────────────────────────────
 
 /// Broadcast-Nachricht mit einer einzelnen Chat-Zeile
+#[cfg(any(feature = "hosted", feature = "headless"))]
 #[derive(Message, Serialize, Deserialize, Debug, Clone)]
-#[cfg(feature = "headless")]
 pub struct ServerChat {
     pub sender_name: String,
     pub sender_steam_id: Option<u64>,
@@ -104,14 +104,14 @@ pub struct ServerChat {
 }
 
 /// Antwort auf `ClientChatHistoryRequest`
-#[cfg(feature = "headless")]
+#[cfg(any(feature = "hosted", feature = "headless"))]
 #[derive(Message, Serialize, Deserialize, Debug, Clone)]
 pub struct ServerChatHistoryResponse {
     pub history: Vec<ServerChat>,
 }
 
 /// Fehler-Rückmeldung an den Client der die ungültige Nachricht gesendet hat
-#[cfg(feature = "headless")]
+#[cfg(any(feature = "hosted", feature = "headless"))]
 #[derive(Message, Serialize, Deserialize, Debug, Clone)]
 pub struct ServerChatError {
     pub error_type: ChatErrorType,
@@ -119,7 +119,7 @@ pub struct ServerChatError {
 }
 
 /// Autocomplete-Daten die der Server periodisch an alle Clients sendet
-#[cfg(feature = "headless")]
+#[cfg(any(feature = "hosted", feature = "headless"))]
 #[derive(Message, Serialize, Deserialize, Debug, Clone)]
 pub struct ServerChatAutocomplete {
     pub commands: Vec<ChatCommandInfo>,
@@ -333,6 +333,7 @@ pub fn broadcast_autocomplete_data(
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
 /// Extrahiert den Command-Namen aus einer Nachricht (z.B. `/help` → `Some("help")`)
+#[cfg(any(feature = "hosted", feature = "headless"))]
 pub fn extract_command(text: &str) -> Option<&str> {
     text.strip_prefix(CHAT_COMMAND_PREFIX)
         .map(|s| s.split_whitespace().next().unwrap_or(""))
@@ -340,6 +341,7 @@ pub fn extract_command(text: &str) -> Option<&str> {
 }
 
 /// Extrahiert alle @mentions aus einer Nachricht
+#[cfg(any(feature = "hosted", feature = "headless"))]
 pub fn extract_mentions(text: &str) -> Vec<&str> {
     text.split_whitespace()
         .filter_map(|word| word.strip_prefix(CHAT_MENTION_PREFIX))

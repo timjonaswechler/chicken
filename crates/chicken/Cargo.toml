@@ -13,7 +13,7 @@ chicken_identity = { workspace = true }
 chicken_states = { workspace = true }
 chicken_notifications = { workspace = true }
 chicken_exitcodes = { workspace = true }
-chicken_protocols = { workspace = true, features = ["server", "client"] }
+chicken_protocols = { workspace = true }
 chicken_settings = { workspace = true }
 chicken_settings_content = { workspace = true }
 chicken_steam = { workspace = true }
@@ -24,6 +24,16 @@ bevy = { workspace = true }
 
 
 [features]
+hosted = [
+    "chicken_states/hosted",
+    "chicken_protocols/hosted",
+    "chicken_network/client",
+]
+headless = [
+    "chicken_states/headless",
+    "chicken_protocols/headless",
+    "chicken_network/server",
+]
 example_bevy3d = ["bevy/3d"]
 
 

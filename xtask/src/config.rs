@@ -43,9 +43,8 @@ pub const CRATES: &[CrateConfig] = &[
         name: "chicken_protocols",
         features: &[
             ("default", ""),
-            ("server", "server"),
-            ("client", "client"),
-            ("all", "server,client"),
+            ("hosted", "hosted"),
+            ("headless", "headless"),
         ],
         test_threads_1: false,
         integration_tests: &[],

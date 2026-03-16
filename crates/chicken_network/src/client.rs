@@ -16,7 +16,7 @@ use {
     chicken_notifications::Notify,
     chicken_states::{
         events::session::{SetConnectingStep, SetDisconnectingStep, SetSyncingStep},
-        states::session::{ClientConnectionStatus, ConnectingStep, DisconnectingStep},
+        states::session::{ClientConnectionStatus, ConnectingStep, DisconnectingStep, SyncingStep},
     },
     discovery::ClientDiscoveryPlugin,
     helpers::client_config,
@@ -31,6 +31,10 @@ impl Plugin for ClientLogicPlugin {
             .add_systems(
                 OnEnter(ClientConnectionStatus::Connecting),
                 on_client_connecting,
+            )
+            .add_systems(
+                Update,
+                advance_connecting_steps.run_if(in_state(ClientConnectionStatus::Connecting)),
             )
             .add_systems(
                 Update,
@@ -254,27 +258,58 @@ fn on_client_connected(
     let name = names.get(target).ok();
     if let Some(name) = name {
         info!("Connected as {}", name.as_str());
-
-        let message = PlayerNameMessage {
+        ping.write(PlayerNameMessage {
             player_name: name.as_str().to_string(),
-        };
-        info!("Sent player name: {}", message.player_name);
-        // Nachricht senden
-        ping.write(message);
+        });
     } else {
         warn!("Session {} missing Name component", target);
     }
 
+    // Session established → OpeningConnection → Authenticating (identity sent above)
     commands.trigger(SetConnectingStep::Next);
 }
 
-fn client_syncing(mut commands: Commands) {
-    info!("TODO: Implement client sync system");
-    commands.trigger(SetConnectingStep::Done);
+/// Advances ConnectingStep while waiting for server auth response.
+/// `OpeningConnection` is driven by `on_client_connected` (On<Add, Session>).
+/// `Authenticating` and `WaitingForAccept` are placeholder auto-advances until
+/// a real server accept/reject message is implemented (see TODO in ConnectingStep).
+fn advance_connecting_steps(
+    step: Option<Res<State<ConnectingStep>>>,
+    mut commands: Commands,
+) {
+    let Some(step) = step else { return };
+
+    match step.get() {
+        ConnectingStep::OpeningConnection => {
+            // Waiting for On<Add, Session> — driven by on_client_connected
+        }
+        ConnectingStep::Authenticating | ConnectingStep::WaitingForAccept => {
+            // TODO: replace with real server accept/reject message
+            commands.trigger(SetConnectingStep::Next);
+        }
+        ConnectingStep::Ready => {
+            commands.trigger(SetConnectingStep::Done);
+        }
+    }
 }
 
-fn on_client_running(mut _commands: Commands) {
-    info!("Client is running");
+/// Advances SyncingStep one step per frame.
+/// TODO: replace with real world-sync logic (request world, receive chunks, spawn entities).
+fn client_syncing(step: Option<Res<State<SyncingStep>>>, mut commands: Commands) {
+    let Some(step) = step else { return };
+    match step.get() {
+        SyncingStep::RequestWorld | SyncingStep::ReceiveChunks | SyncingStep::SpawnEntities => {
+            commands.trigger(SetSyncingStep::Next);
+        }
+        SyncingStep::Ready => {
+            commands.trigger(SetSyncingStep::Done);
+        }
+    }
+}
+
+fn on_client_running(mut commands: Commands) {
+    info!("Client connected, starting sync");
+    commands.trigger(SetSyncingStep::Start);
 }
 
 fn client_disconnecting(

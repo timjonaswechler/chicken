@@ -469,7 +469,7 @@ pub fn assert_server_startup_step(app: &mut App, expected: ServerStartupStep) {
 
 /// Number of Next steps to reach Ready during connecting.
 #[cfg(feature = "hosted")]
-pub const CLIENT_CONNECTING_STEPS: u8 = 4;
+pub const CLIENT_CONNECTING_STEPS: u8 = 3;
 /// Number of Next steps to reach Ready during syncing.
 #[cfg(feature = "hosted")]
 pub const CLIENT_SYNCING_STEPS: u8 = 3;

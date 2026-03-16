@@ -14,7 +14,7 @@ use chicken_states::{
 // Connecting — Menu → Client (JoinGame → Confirm → Connecting)
 // =============================================================================
 
-/// JoinGame → Confirm immediately enters Connecting state (first step: ResolveAddress).
+/// JoinGame → Confirm immediately enters Connecting state (first step: OpeningConnection).
 /// Verifies all three state transitions set directly by Confirm.
 #[test]
 fn test_join_game_confirm_starts_connecting() {
@@ -23,7 +23,7 @@ fn test_join_game_confirm_starts_connecting() {
     common::assert_app_scope(&mut app, AppScope::Session);
     common::assert_session_type(&mut app, SessionType::Client);
     common::assert_client_status(&mut app, ClientConnectionStatus::Connecting);
-    common::assert_connecting_step(&mut app, ConnectingStep::ResolveAddress);
+    common::assert_connecting_step(&mut app, ConnectingStep::OpeningConnection);
 }
 
 /// Full connect flow: Connecting → (all steps) → Connected.

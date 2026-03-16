@@ -63,7 +63,7 @@ fn on_client_disconnected(
         }
         ClientConnectionStatus::Playing => {
             notify_disconnect(&trigger.reason, &mut commands);
-            commands.trigger(SetDisconnectingStep::Failed);
+            commands.trigger(SetDisconnectingStep::Start);
         }
         _ => {}
     }
@@ -276,10 +276,7 @@ fn on_client_connected(
 /// `OpeningConnection` is driven by `on_client_connected` (On<Add, Session>).
 /// `Authenticating` and `WaitingForAccept` are placeholder auto-advances until
 /// a real server accept/reject message is implemented (see TODO in ConnectingStep).
-fn advance_connecting_steps(
-    step: Option<Res<State<ConnectingStep>>>,
-    mut commands: Commands,
-) {
+fn advance_connecting_steps(step: Option<Res<State<ConnectingStep>>>, mut commands: Commands) {
     let Some(step) = step else { return };
 
     match step.get() {

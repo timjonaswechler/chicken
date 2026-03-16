@@ -1,26 +1,35 @@
-use {
-    bevy::prelude::*,
-    bevy_replicon::prelude::*,
-    serde::{Deserialize, Serialize},
-};
+#[cfg(all(not(feature = "hosted"), not(feature = "headless")))]
+compile_error!("You must enable either the 'hosted' or 'headless' feature to build this crate.");
+
+#[cfg(all(feature = "hosted", feature = "headless"))]
+compile_error!("You cannot enable both the 'hosted' and 'headless' features.");
 
 #[cfg(any(feature = "hosted", feature = "headless"))]
 use {
+    bevy::prelude::*,
+    bevy_replicon::prelude::*,
     chicken_states::states::session::ServerStatus,
+    serde::{Deserialize, Serialize},
     std::collections::{HashMap, VecDeque},
 };
 
 // ─── Konstanten ──────────────────────────────────────────────────────────────
 
 /// Server-seitige maximale Chat-History im RAM
+#[cfg(any(feature = "hosted", feature = "headless"))]
 pub const CHAT_HISTORY_SIZE: usize = 1024;
+
 /// Maximale Anzahl Nachrichten die ein Client bei History-Request erhält
+#[cfg(any(feature = "hosted", feature = "headless"))]
 pub const CHAT_CLIENT_HISTORY_SIZE: usize = 128;
 /// Maximale Zeichenlänge einer einzelnen Chat-Nachricht
+#[cfg(any(feature = "hosted", feature = "headless"))]
 pub const CHAT_MESSAGE_MAX_LENGTH: usize = 512;
 /// Prefix-Zeichen für Chat-Commands (z.B. `/help`)
+#[cfg(any(feature = "hosted", feature = "headless"))]
 pub const CHAT_COMMAND_PREFIX: char = '/';
 /// Prefix-Zeichen für Mentions (z.B. `@Spieler`)
+#[cfg(any(feature = "hosted", feature = "headless"))]
 pub const CHAT_MENTION_PREFIX: char = '@';
 
 // ─── Plugin ──────────────────────────────────────────────────────────────────
@@ -62,16 +71,19 @@ impl Plugin for ProtocolPlugin {
 // ─── Client → Server ─────────────────────────────────────────────────────────
 
 /// Nachricht, die ein Client an den Server sendet
+#[cfg(feature = "hosted")]
 #[derive(Message, Serialize, Deserialize, Debug, Clone)]
 pub struct ClientChat {
     pub text: String,
 }
 
 /// Client fordert die Chat-History an (z.B. nach dem Verbinden)
+#[cfg(feature = "hosted")]
 #[derive(Message, Serialize, Deserialize, Debug, Clone)]
 pub struct ClientChatHistoryRequest;
 
 /// Client meldet seinen Anzeigenamen und optionale Steam-ID
+#[cfg(feature = "hosted")]
 #[derive(Message, Serialize, Deserialize, Debug, Clone)]
 pub struct ClientChatIdentity {
     pub name: String,
@@ -82,6 +94,7 @@ pub struct ClientChatIdentity {
 
 /// Broadcast-Nachricht mit einer einzelnen Chat-Zeile
 #[derive(Message, Serialize, Deserialize, Debug, Clone)]
+#[cfg(feature = "headless")]
 pub struct ServerChat {
     pub sender_name: String,
     pub sender_steam_id: Option<u64>,
@@ -91,12 +104,14 @@ pub struct ServerChat {
 }
 
 /// Antwort auf `ClientChatHistoryRequest`
+#[cfg(feature = "headless")]
 #[derive(Message, Serialize, Deserialize, Debug, Clone)]
 pub struct ServerChatHistoryResponse {
     pub history: Vec<ServerChat>,
 }
 
 /// Fehler-Rückmeldung an den Client der die ungültige Nachricht gesendet hat
+#[cfg(feature = "headless")]
 #[derive(Message, Serialize, Deserialize, Debug, Clone)]
 pub struct ServerChatError {
     pub error_type: ChatErrorType,
@@ -104,6 +119,7 @@ pub struct ServerChatError {
 }
 
 /// Autocomplete-Daten die der Server periodisch an alle Clients sendet
+#[cfg(feature = "headless")]
 #[derive(Message, Serialize, Deserialize, Debug, Clone)]
 pub struct ServerChatAutocomplete {
     pub commands: Vec<ChatCommandInfo>,
@@ -113,6 +129,7 @@ pub struct ServerChatAutocomplete {
 // ─── Hilfstypen ──────────────────────────────────────────────────────────────
 
 /// Klassifizierung eines Chat-Fehlers
+#[cfg(any(feature = "hosted", feature = "headless"))]
 #[derive(Message, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum ChatErrorType {
     MessageTooLong,
@@ -121,6 +138,7 @@ pub enum ChatErrorType {
 }
 
 /// Beschreibung eines verfügbaren Server-Commands für Autocomplete
+#[cfg(any(feature = "hosted", feature = "headless"))]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChatCommandInfo {
     pub command: String,
@@ -129,6 +147,7 @@ pub struct ChatCommandInfo {
 }
 
 /// Spieler-Eintrag für @mention-Autocomplete
+#[cfg(any(feature = "hosted", feature = "headless"))]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChatPlayerInfo {
     pub name: String,

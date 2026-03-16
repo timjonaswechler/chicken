@@ -1,17 +1,14 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 lib.rs
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy...
-
 use {
     bevy::prelude::*,
     bevy_replicon::prelude::*,
     serde::{Deserialize, Serialize},
-    std::collections::{HashMap, VecDeque},
 };
 
 #[cfg(any(feature = "hosted", feature = "headless"))]
-use chicken_states::states::session::ServerStatus;
+use {
+    chicken_states::states::session::ServerStatus,
+    std::collections::{HashMap, VecDeque},
+};
 
 // ─── Konstanten ──────────────────────────────────────────────────────────────
 
@@ -28,8 +25,10 @@ pub const CHAT_MENTION_PREFIX: char = '@';
 
 // ─── Plugin ──────────────────────────────────────────────────────────────────
 
+#[cfg(any(feature = "hosted", feature = "headless"))]
 pub struct ProtocolPlugin;
 
+#[cfg(any(feature = "hosted", feature = "headless"))]
 impl Plugin for ProtocolPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ChatHistory>()
@@ -43,7 +42,6 @@ impl Plugin for ProtocolPlugin {
             .add_server_message::<ServerChatError>(Channel::Ordered)
             .add_server_message::<ServerChatAutocomplete>(Channel::Ordered);
 
-        #[cfg(any(feature = "hosted", feature = "headless"))]
         app.add_systems(
             Update,
             (
@@ -140,13 +138,16 @@ pub struct ChatPlayerInfo {
 // ─── Server-Ressourcen ───────────────────────────────────────────────────────
 
 /// Chat-History im Server-RAM (begrenzt auf `CHAT_HISTORY_SIZE`)
+#[cfg(any(feature = "hosted", feature = "headless"))]
 #[derive(Resource, Default)]
 pub struct ChatHistory(pub VecDeque<ServerChat>);
 
 /// Zuordnung von `ClientId` → Anzeigename + Steam-ID
+#[cfg(any(feature = "hosted", feature = "headless"))]
 #[derive(Resource, Default)]
 pub struct ChatIdentities(pub HashMap<ClientId, ChatIdentity>);
 
+#[cfg(any(feature = "hosted", feature = "headless"))]
 #[derive(Debug, Clone)]
 pub struct ChatIdentity {
     pub name: String,
@@ -154,6 +155,7 @@ pub struct ChatIdentity {
 }
 
 /// Serverseitig verwaltete Autocomplete-Daten (Commands + Spielerliste)
+#[cfg(any(feature = "hosted", feature = "headless"))]
 #[derive(Resource, Default)]
 pub struct ChatAutocompleteData {
     pub commands: Vec<ChatCommandInfo>,
@@ -161,6 +163,7 @@ pub struct ChatAutocompleteData {
 
 // ─── Server-Systeme ──────────────────────────────────────────────────────────
 
+#[cfg(any(feature = "hosted", feature = "headless"))]
 pub fn handle_client_chat(
     mut client_chat_events: MessageReader<FromClient<ClientChat>>,
     mut server_chat_events: MessageWriter<ToClients<ServerChat>>,
@@ -174,7 +177,6 @@ pub fn handle_client_chat(
     {
         let text = message.text.trim();
 
-        // Validierung
         if text.is_empty() {
             error_events.write(ToClients {
                 mode: SendMode::Direct(*client_id),
@@ -242,6 +244,7 @@ pub fn handle_client_chat(
     }
 }
 
+#[cfg(any(feature = "hosted", feature = "headless"))]
 pub fn handle_client_chat_identity(
     mut identity_events: MessageReader<FromClient<ClientChatIdentity>>,
     mut chat_identities: ResMut<ChatIdentities>,
@@ -260,6 +263,7 @@ pub fn handle_client_chat_identity(
     }
 }
 
+#[cfg(any(feature = "hosted", feature = "headless"))]
 pub fn handle_client_chat_history_request(
     mut history_requests: MessageReader<FromClient<ClientChatHistoryRequest>>,
     mut server_chat_events: MessageWriter<ToClients<ServerChatHistoryResponse>>,
@@ -283,7 +287,7 @@ pub fn handle_client_chat_history_request(
 }
 
 /// Sendet aktuelle Autocomplete-Daten (Commands + Spielerliste) an alle Clients.
-/// Sollte periodisch oder bei Änderungen aufgerufen werden.
+#[cfg(any(feature = "hosted", feature = "headless"))]
 pub fn broadcast_autocomplete_data(
     mut autocomplete_events: MessageWriter<ToClients<ServerChatAutocomplete>>,
     autocomplete_data: Res<ChatAutocompleteData>,
@@ -324,8 +328,8 @@ pub fn extract_mentions(text: &str) -> Vec<&str> {
         .collect()
 }
 
-/// Filtert die Chat-History für einen bestimmten Spieler:
-/// Priorisiert @mentions, füllt mit neuesten Nachrichten auf bis `CHAT_CLIENT_HISTORY_SIZE`.
+/// Filtert die Chat-History für einen bestimmten Spieler.
+#[cfg(any(feature = "hosted", feature = "headless"))]
 fn filter_relevant_chat_history(history: &VecDeque<ServerChat>, own_name: &str) -> Vec<ServerChat> {
     let mention = format!("{}{}", CHAT_MENTION_PREFIX, own_name);
 

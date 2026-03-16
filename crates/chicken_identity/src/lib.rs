@@ -46,3 +46,34 @@ pub struct IdentityChanged {
     pub old: PlayerIdentity,
     pub new: PlayerIdentity,
 }
+
+/// Plugin that registers the `IdentityChanged` event and triggers it whenever
+/// `PlayerIdentity` is mutated.
+pub struct ChickenIdentityPlugin;
+
+impl Plugin for ChickenIdentityPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(PostUpdate, detect_identity_changed);
+    }
+}
+
+fn detect_identity_changed(
+    identity: Option<Res<PlayerIdentity>>,
+    mut last: Local<Option<PlayerIdentity>>,
+    mut commands: Commands,
+) {
+    let Some(identity) = identity else { return };
+
+    if identity.is_changed() {
+        let new = identity.clone();
+        if let Some(old) = last.take() {
+            commands.trigger(IdentityChanged {
+                old,
+                new: new.clone(),
+            });
+        }
+        *last = Some(new);
+    } else if last.is_none() {
+        *last = Some(identity.clone());
+    }
+}

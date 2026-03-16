@@ -45,6 +45,7 @@ impl Plugin for ChickenPlugin {
             chicken_states::ChickenStatePlugin,
             chicken_network::ChickenNetPlugin,
             chicken_protocols::ProtocolPlugin,
+            chicken_identity::ChickenIdentityPlugin,
         ))
         .add_settings::<settings::SettingsContent>()
         .add_settings::<settings::NetworkingSettings>();

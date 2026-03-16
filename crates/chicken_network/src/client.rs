@@ -57,16 +57,19 @@ fn on_client_disconnected(
     mut commands: Commands,
 ) {
     match state.get() {
-        ClientConnectionStatus::Connected
-        | ClientConnectionStatus::Syncing
-        | ClientConnectionStatus::Playing => {
-            on_client_receive_disconnect(&trigger.reason, &mut commands);
+        ClientConnectionStatus::Connected | ClientConnectionStatus::Syncing => {
+            notify_disconnect(&trigger.reason, &mut commands);
+            commands.trigger(SetConnectingStep::Failed);
+        }
+        ClientConnectionStatus::Playing => {
+            notify_disconnect(&trigger.reason, &mut commands);
+            commands.trigger(SetDisconnectingStep::Failed);
         }
         _ => {}
     }
 }
 
-fn on_client_receive_disconnect(reason: &DisconnectReason, commands: &mut Commands) {
+fn notify_disconnect(reason: &DisconnectReason, commands: &mut Commands) {
     match reason {
         DisconnectReason::ByPeer(msg) => {
             info!("Server closed connection: {msg}");
@@ -76,10 +79,8 @@ fn on_client_receive_disconnect(reason: &DisconnectReason, commands: &mut Comman
             error!("Connection lost: {err}");
             commands.trigger(Notify::error(format!("Connection lost: {err}")));
         }
-        DisconnectReason::ByUser(_) => return,
+        DisconnectReason::ByUser(_) => {}
     }
-
-    commands.trigger(SetConnectingStep::Failed);
 }
 
 /// ClientTarget is the data structure which the user selected or putted in a text field

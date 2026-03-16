@@ -1,10 +1,10 @@
 use {
-    crate::states::{
-        app::AppScope,
-        session::{SessionState, SessionType},
-    },
+    crate::states::app::AppScope,
     bevy::prelude::{App, AppExtStates, Plugin},
 };
+
+#[cfg(any(feature = "hosted", feature = "headless"))]
+use crate::states::session::{SessionState, SessionType};
 
 #[cfg(feature = "hosted")]
 use {
@@ -28,8 +28,9 @@ impl Plugin for AppLogicPlugin {
         if !app.is_plugin_added::<InputPlugin>() {
             app.add_plugins(InputPlugin);
         }
-        app.init_state::<AppScope>()
-            .init_state::<SessionType>()
+        app.init_state::<AppScope>();
+        #[cfg(any(feature = "hosted", feature = "headless"))]
+        app.init_state::<SessionType>()
             .add_sub_state::<SessionState>();
 
         #[cfg(feature = "hosted")]

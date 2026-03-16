@@ -26,5 +26,9 @@ impl Default for AppScope {
         // Dedicated Server starts directly in Session
         #[cfg(feature = "headless")]
         return AppScope::Session;
+
+        // Unreachable: compile_error! in lib.rs fires first when no feature is enabled
+        #[cfg(not(any(feature = "hosted", feature = "headless")))]
+        return AppScope::Session;
     }
 }

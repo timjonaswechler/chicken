@@ -10,7 +10,7 @@ use {
     std::collections::{HashMap, VecDeque},
 };
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "hosted", feature = "headless"))]
 use chicken_states::states::session::ServerStatus;
 
 // ─── Konstanten ──────────────────────────────────────────────────────────────
@@ -43,7 +43,7 @@ impl Plugin for ProtocolPlugin {
             .add_server_message::<ServerChatError>(Channel::Ordered)
             .add_server_message::<ServerChatAutocomplete>(Channel::Ordered);
 
-        #[cfg(feature = "server")]
+        #[cfg(any(feature = "hosted", feature = "headless"))]
         app.add_systems(
             Update,
             (

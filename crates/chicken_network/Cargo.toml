@@ -20,6 +20,7 @@ bevy_replicon = { workspace = true }
 
 chicken_identity = { workspace = true }
 chicken_states = { workspace = true }
+chicken_protocols = { workspace = true }
 chicken_notifications = { workspace = true }
 chicken_exitcodes = { workspace = true }
 chicken_settings = { workspace = true }
@@ -27,14 +28,20 @@ chicken_settings_content = { workspace = true }
 
 anyhow = "1.0"
 
+# Kryptographie für Ed25519 Challenge-Response Auth
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand = "0.8"
+sha2 = "0.10"
+hex = "0.4"
+
 # Serialization
 serde = { workspace = true, features = ["derive"] }
 serde_json = "1.0"
 
 [features]
 default = ["aeronet_replicon/server", "aeronet_webtransport/server", "bevy_replicon/server","client"]
-server = ["chicken_states/headless"]
-client = ["aeronet_replicon/client", "aeronet_webtransport/client", "bevy_replicon/client", "chicken_states/hosted"]
+server = ["chicken_states/headless", "chicken_protocols/headless"]
+client = ["aeronet_replicon/client", "aeronet_webtransport/client", "bevy_replicon/client", "chicken_states/hosted", "chicken_protocols/hosted"]
 
 [lints]
 workspace = true

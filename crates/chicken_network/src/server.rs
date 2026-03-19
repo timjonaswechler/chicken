@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod discovery;
 pub mod local;
 pub mod networking;
@@ -11,6 +12,7 @@ pub(crate) struct ServerLogicPlugin;
 impl Plugin for ServerLogicPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
+            auth::ServerAuthPlugin,
             discovery::DiscoveryServerPlugin,
             local::LocalServerPlugin,
             quic::QUICServerPlugin,

@@ -113,6 +113,26 @@ fn handle_client_auth_response(
         match verify_result {
             Ok(()) => {
                 let player_id = hex::encode(Sha256::digest(pending.public_key));
+
+                // Doppelt-Verbindungs-Check: selbe player_id darf nur einmal verbunden sein.
+                // Im Debug-Build erlaubt (z.B. hosted Server + Client auf gleicher Maschine).
+                #[cfg(not(debug_assertions))]
+                if player_registry.0.values().any(|p| p.player_id == player_id) {
+                    warn!("Verbindung abgelehnt: player_id {} bereits verbunden", &player_id[..16]);
+                    result_writer.write(ToClients {
+                        mode: SendMode::Direct(*client_id),
+                        message: ServerAuthResult {
+                            accepted: false,
+                            player_id: String::new(),
+                            reason: Some("Bereits von einer anderen Session verbunden".to_string()),
+                        },
+                    });
+                    continue;
+                }
+                #[cfg(debug_assertions)]
+                if player_registry.0.values().any(|p| p.player_id == player_id) {
+                    warn!("Selbe player_id {} verbindet sich erneut — im Debug-Build erlaubt", &player_id[..16]);
+                }
                 player_registry.0.insert(
                     *client_id,
                     AuthenticatedPlayer {

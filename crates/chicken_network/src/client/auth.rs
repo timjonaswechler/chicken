@@ -88,10 +88,12 @@ fn generate_and_save_key(path: &std::path::Path) -> SigningKey {
     key
 }
 
-/// Empfängt den Nonce-Challenge vom Server, signiert ihn und schickt die Antwort zurück.
+/// Empfängt den Nonce-Challenge vom Server, signiert ihn, schickt die Antwort zurück
+/// und wechselt zu WaitingForAccept.
 fn on_auth_challenge_received(
     mut challenge_reader: MessageReader<ServerAuthChallenge>,
     mut response_writer: MessageWriter<ClientAuthResponse>,
+    mut commands: Commands,
     identity: Option<Res<LocalIdentity>>,
 ) {
     let Some(identity) = identity else {
@@ -102,6 +104,8 @@ fn on_auth_challenge_received(
         let signature = identity.signing_key.sign(&message.nonce).to_bytes().to_vec();
         response_writer.write(ClientAuthResponse { signature });
         info!("Auth-Challenge signiert und gesendet");
+        // Authenticating → WaitingForAccept
+        commands.trigger(SetConnectingStep::Next);
     }
 }
 

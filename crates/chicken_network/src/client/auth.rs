@@ -40,10 +40,13 @@ impl LocalIdentity {
 }
 
 fn setup_local_identity(mut commands: Commands) {
-    // TODO: App-Datenverzeichnis statt current_dir verwenden (z.B. dirs::data_dir())
-    let path = std::env::current_dir()
-        .unwrap_or_default()
-        .join("identity.key");
+    let data_dir = dirs::data_local_dir()
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    let dir = data_dir.join("chicken");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        warn!("Konnte Identitätsverzeichnis nicht erstellen: {}", e);
+    }
+    let path = dir.join("identity.key");
 
     let signing_key = if path.exists() {
         match fs::read(&path) {

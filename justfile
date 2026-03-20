@@ -11,8 +11,8 @@ doc *args:
 
 
 
-release version:
-    cargo xtask release {{version}}
+release version +flags:
+    cargo xtask release {{version}} {{flags}}
 
 changelog:
     git-cliff --config cliff.toml --output CHANGELOG.md

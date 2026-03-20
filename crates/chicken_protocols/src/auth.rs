@@ -14,6 +14,8 @@ pub struct ClientIdentityHello {
     pub display_name: String,
     /// Optional: Steam-ID falls Spieler über Steam verbunden
     pub steam_id: Option<u64>,
+    /// Optionales Server-Passwort. None falls kein Passwort gesetzt oder Server offen.
+    pub password: Option<String>,
 }
 
 /// Signatur-Antwort des Clients auf den Server-Challenge.

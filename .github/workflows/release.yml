@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
   contents: write
@@ -35,24 +35,19 @@ jobs:
         with:
           tool: cargo-llvm-cov,git-cliff
 
-      # ─── Tests ───────────────────────────────────────────────────────────────
+      # ─── Tests & Coverage ─────────────────────────────────────────────────
 
-      - name: Run tests
-        run: cargo xtask test --ci
-
-      # ─── Coverage ────────────────────────────────────────────────────────────
-
-      - name: Generate coverage
-        run: |
-          cargo llvm-cov --package chicken_states --features hosted   --json --output-path cov-states-hosted.json
-          cargo llvm-cov --package chicken_states --features headless --json --output-path cov-states-headless.json
-          cargo llvm-cov --package chicken_protocols                  --json --output-path cov-protocols.json
-          cargo llvm-cov --package chicken_settings                   --json --output-path cov-settings.json
+      - name: Test & Coverage
+        run: cargo xtask test --ci --coverage
 
       - name: Build coverage table
         id: coverage
         run: |
-          TABLE="| Crate | Feature | Lines | Functions | Branches |\n|-------|---------|-------|-----------|----------|\n"
+          echo "## Code Coverage" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Crate | Feature | Lines | Functions | Branches |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|---------|-------|-----------|----------|" >> $GITHUB_STEP_SUMMARY
+
           for file in cov-*.json; do
             name=$(basename "$file" .json | sed 's/cov-//')
             lines=$(jq -r '.data[0].totals.lines.percent // 0 | . * 10 | round | . / 10' "$file")
@@ -60,10 +55,10 @@ jobs:
             branches=$(jq -r '.data[0].totals.branches.percent // 0 | . * 10 | round | . / 10' "$file")
             crate=$(echo "$name" | cut -d- -f1-2 | sed 's/-/ /g')
             feat=$(echo "$name" | cut -d- -f3)
-            TABLE="${TABLE}| $crate | ${feat:--} | ${lines}% | ${funcs}% | ${branches}% |\n"
+            echo "| $crate | ${feat:--} | ${lines}% | ${funcs}% | ${branches}% |" >> $GITHUB_STEP_SUMMARY
           done
           echo "table<<EOF" >> $GITHUB_OUTPUT
-          printf "$TABLE" >> $GITHUB_OUTPUT
+          printf '%b' "$TABLE" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
       # ─── GitHub Release ───────────────────────────────────────────────────────
@@ -74,12 +69,13 @@ jobs:
           echo "" >> RELEASE_NOTES.md
           echo "## Code Coverage" >> RELEASE_NOTES.md
           echo "" >> RELEASE_NOTES.md
-          printf "${{ steps.coverage.outputs.table }}" >> RELEASE_NOTES.md
+          printf '%b' "${{ steps.coverage.outputs.table }}" >> RELEASE_NOTES.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           body_path: RELEASE_NOTES.md
+          prerelease: ${{ contains(github.ref_name, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -122,6 +118,7 @@ jobs:
           path: campfire
 
       - name: Create PR in campfire
+        if: "!contains(github.ref_name, '-')"
         env:
           GH_TOKEN: ${{ secrets.FOC_CLIENT_TOKEN }}
         run: |

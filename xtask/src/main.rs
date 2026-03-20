@@ -1,11 +1,11 @@
 mod config;
 mod runner;
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
-use config::{CRATES, find_crate};
+use config::{find_crate, CRATES};
 use inquire::{InquireError, MultiSelect, Select, Text};
-use runner::{TestJob, run_job};
+use runner::{run_job, TestJob};
 use std::process::Command;
 
 #[derive(Parser)]
@@ -19,8 +19,16 @@ struct Cli {
 enum Task {
     /// Create a new release: bump workspace version, commit, tag, push
     Release {
-        /// Version to release (e.g. 0.2.0 or v0.2.0)
+        /// Base version to release (e.g. 0.2.0 or v0.2.0)
         version: String,
+        /// Pre-release suffix: --pre, --alpha, or --rc
+        /// Auto-increments the number (e.g. -pre.1 → -pre.2)
+        #[arg(long)]
+        pre: bool,
+        #[arg(long)]
+        alpha: bool,
+        #[arg(long)]
+        rc: bool,
     },
     /// Run tests
     Test {
@@ -53,16 +61,39 @@ enum Task {
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args()
         .enumerate()
-        .filter_map(|(i, a)| if i == 1 && a == "xtask" { None } else { Some(a) })
+        .filter_map(|(i, a)| {
+            if i == 1 && a == "xtask" {
+                None
+            } else {
+                Some(a)
+            }
+        })
         .collect();
 
     let cli = Cli::parse_from(args);
 
     match cli.command {
-        Task::Release { version } => release(version),
-        Task::Test { crate_name, features, module, interactive, ci, coverage } => {
-            run_tests(crate_name, features, module, interactive, ci || coverage, coverage)
-        }
+        Task::Release {
+            version,
+            pre,
+            alpha,
+            rc,
+        } => release(version, pre, alpha, rc),
+        Task::Test {
+            crate_name,
+            features,
+            module,
+            interactive,
+            ci,
+            coverage,
+        } => run_tests(
+            crate_name,
+            features,
+            module,
+            interactive,
+            ci || coverage,
+            coverage,
+        ),
     }
 }
 
@@ -101,8 +132,11 @@ fn run_tests(
     } else {
         println!("FAILED TESTS:");
         for (krate, feat) in &failed {
-            if feat.is_empty() { println!("  {krate}"); }
-            else { println!("  {krate} (features: {feat})"); }
+            if feat.is_empty() {
+                println!("  {krate}");
+            } else {
+                println!("  {krate} (features: {feat})");
+            }
         }
     }
     println!("{sep}");
@@ -176,10 +210,13 @@ fn generate_coverage_reports(jobs: &[TestJob]) -> Result<()> {
         };
 
         let mut cmd = Command::new("cargo");
-        cmd.arg("llvm-cov").arg("report")
+        cmd.arg("llvm-cov")
+            .arg("report")
             .arg("--json")
-            .arg("--output-path").arg(&filename)
-            .arg("-p").arg(crate_name);
+            .arg("--output-path")
+            .arg(&filename)
+            .arg("-p")
+            .arg(crate_name);
 
         println!("Report: {filename}");
         let status = cmd.status()?;
@@ -275,11 +312,18 @@ fn build_jobs_interactive() -> Result<Vec<TestJob>> {
                 match or_back(
                     MultiSelect::new("Select crates to test:", crate_names.clone()).prompt(),
                 )? {
-                    None => { println!("Cancelled."); return Ok(vec![]); }
-                    Some(sel) if sel.is_empty() => { println!("No crates selected."); return Ok(vec![]); }
+                    None => {
+                        println!("Cancelled.");
+                        return Ok(vec![]);
+                    }
+                    Some(sel) if sel.is_empty() => {
+                        println!("No crates selected.");
+                        return Ok(vec![]);
+                    }
                     Some(sel) => {
                         // map names back to indices
-                        let indices: Vec<usize> = sel.iter()
+                        let indices: Vec<usize> = sel
+                            .iter()
                             .filter_map(|name| crate_names.iter().position(|n| n == name))
                             .collect();
                         if indices != selected_crates {
@@ -293,19 +337,36 @@ fn build_jobs_interactive() -> Result<Vec<TestJob>> {
 
             Phase::Features(pos) => {
                 let cfg = &CRATES[selected_crates[pos]];
-                let feature_labels: Vec<String> = cfg.features.iter()
+                let feature_labels: Vec<String> = cfg
+                    .features
+                    .iter()
                     .map(|(alias, feat)| {
-                        if feat.is_empty() { format!("{alias} (no features)") }
-                        else { format!("{alias} [{feat}]") }
+                        if feat.is_empty() {
+                            format!("{alias} (no features)")
+                        } else {
+                            format!("{alias} [{feat}]")
+                        }
                     })
                     .collect();
 
-                let prompt = format!("[{}/{}] Features for {}:", pos + 1, selected_crates.len(), cfg.name);
+                let prompt = format!(
+                    "[{}/{}] Features for {}:",
+                    pos + 1,
+                    selected_crates.len(),
+                    cfg.name
+                );
                 match or_back(MultiSelect::new(&prompt, feature_labels.clone()).prompt())? {
-                    None => phase = if pos == 0 { Phase::SelectCrates } else { last_phase_of(pos - 1, &selected_crates, &answers) },
+                    None => {
+                        phase = if pos == 0 {
+                            Phase::SelectCrates
+                        } else {
+                            last_phase_of(pos - 1, &selected_crates, &answers)
+                        }
+                    }
                     Some(sel) => {
                         // map labels back to indices
-                        answers[pos].features = sel.iter()
+                        answers[pos].features = sel
+                            .iter()
                             .filter_map(|label| feature_labels.iter().position(|l| l == label))
                             .collect();
                         phase = Phase::Kind(pos);
@@ -321,13 +382,22 @@ fn build_jobs_interactive() -> Result<Vec<TestJob>> {
                     options.push("both");
                 }
 
-                let prompt = format!("[{}/{}] What to run for {}:", pos + 1, selected_crates.len(), cfg.name);
+                let prompt = format!(
+                    "[{}/{}] What to run for {}:",
+                    pos + 1,
+                    selected_crates.len(),
+                    cfg.name
+                );
                 match or_back(Select::new(&prompt, options.clone()).prompt())? {
                     None => phase = Phase::Features(pos),
                     Some(choice) => {
                         let k = options.iter().position(|o| *o == choice).unwrap_or(0);
                         answers[pos].kind = k;
-                        phase = if k == 1 { Phase::IntegrationTests(pos) } else { Phase::Module(pos) };
+                        phase = if k == 1 {
+                            Phase::IntegrationTests(pos)
+                        } else {
+                            Phase::Module(pos)
+                        };
                     }
                 }
             }
@@ -335,11 +405,20 @@ fn build_jobs_interactive() -> Result<Vec<TestJob>> {
             Phase::Module(pos) => {
                 let cfg = &CRATES[selected_crates[pos]];
                 let prev = answers[pos].module.clone().unwrap_or_default();
-                let prompt = format!("[{}/{}] Module filter for {} (empty = all):", pos + 1, selected_crates.len(), cfg.name);
+                let prompt = format!(
+                    "[{}/{}] Module filter for {} (empty = all):",
+                    pos + 1,
+                    selected_crates.len(),
+                    cfg.name
+                );
                 match or_back(Text::new(&prompt).with_initial_value(&prev).prompt())? {
                     None => phase = Phase::Kind(pos),
                     Some(input) => {
-                        answers[pos].module = if input.trim().is_empty() { None } else { Some(input.trim().to_string()) };
+                        answers[pos].module = if input.trim().is_empty() {
+                            None
+                        } else {
+                            Some(input.trim().to_string())
+                        };
                         phase = if answers[pos].kind == 2 && !cfg.integration_tests.is_empty() {
                             Phase::IntegrationTests(pos)
                         } else {
@@ -351,12 +430,28 @@ fn build_jobs_interactive() -> Result<Vec<TestJob>> {
 
             Phase::IntegrationTests(pos) => {
                 let cfg = &CRATES[selected_crates[pos]];
-                let options: Vec<&str> = cfg.integration_tests.iter().map(|(name, _)| *name).collect();
-                let prompt = format!("[{}/{}] Integration tests for {}:", pos + 1, selected_crates.len(), cfg.name);
+                let options: Vec<&str> = cfg
+                    .integration_tests
+                    .iter()
+                    .map(|(name, _)| *name)
+                    .collect();
+                let prompt = format!(
+                    "[{}/{}] Integration tests for {}:",
+                    pos + 1,
+                    selected_crates.len(),
+                    cfg.name
+                );
                 match or_back(MultiSelect::new(&prompt, options.clone()).prompt())? {
-                    None => phase = if answers[pos].kind == 2 { Phase::Module(pos) } else { Phase::Kind(pos) },
+                    None => {
+                        phase = if answers[pos].kind == 2 {
+                            Phase::Module(pos)
+                        } else {
+                            Phase::Kind(pos)
+                        }
+                    }
                     Some(sel) => {
-                        answers[pos].integration_tests = sel.iter()
+                        answers[pos].integration_tests = sel
+                            .iter()
                             .filter_map(|name| options.iter().position(|o| o == name))
                             .collect();
                         phase = advance(pos, &selected_crates);
@@ -370,7 +465,11 @@ fn build_jobs_interactive() -> Result<Vec<TestJob>> {
 }
 
 fn advance(pos: usize, selected_crates: &[usize]) -> Phase {
-    if pos + 1 < selected_crates.len() { Phase::Features(pos + 1) } else { Phase::Done }
+    if pos + 1 < selected_crates.len() {
+        Phase::Features(pos + 1)
+    } else {
+        Phase::Done
+    }
 }
 
 fn last_phase_of(prev_pos: usize, selected_crates: &[usize], answers: &[CrateAnswers]) -> Phase {
@@ -383,7 +482,10 @@ fn last_phase_of(prev_pos: usize, selected_crates: &[usize], answers: &[CrateAns
     }
 }
 
-fn build_jobs_from_answers(selected_crates: &[usize], answers: &[CrateAnswers]) -> Result<Vec<TestJob>> {
+fn build_jobs_from_answers(
+    selected_crates: &[usize],
+    answers: &[CrateAnswers],
+) -> Result<Vec<TestJob>> {
     let mut jobs = vec![];
     for (pos, &crate_idx) in selected_crates.iter().enumerate() {
         let cfg = &CRATES[crate_idx];
@@ -426,16 +528,35 @@ fn build_jobs_from_answers(selected_crates: &[usize], answers: &[CrateAnswers]) 
 
 // ─── Release ─────────────────────────────────────────────────────────────────
 
-fn release(version: String) -> Result<()> {
-    let version = version.trim_start_matches('v');
+fn release(version: String, pre: bool, alpha: bool, rc: bool) -> Result<()> {
+    let base_version = version.trim_start_matches('v');
 
-    // Validate semver format x.y.z
-    let parts: Vec<&str> = version.split('.').collect();
+    // Validate base semver format x.y.z
+    let parts: Vec<&str> = base_version.split('.').collect();
     if parts.len() < 3 || parts.iter().any(|p| p.parse::<u32>().is_err()) {
-        bail!("Invalid version: '{}'. Expected format: x.y.z (e.g. 0.2.0)", version);
+        bail!(
+            "Invalid version: '{}'. Expected format: x.y.z (e.g. 0.2.0)",
+            base_version
+        );
     }
 
+    // Determine final version with optional pre-release suffix
+    let version = if pre || alpha || rc {
+        let pre_type = if pre {
+            "pre"
+        } else if alpha {
+            "alpha"
+        } else {
+            "rc"
+        };
+        let next_n = next_pre_number(base_version, pre_type)?;
+        format!("{}-{}.{}", base_version, pre_type, next_n)
+    } else {
+        base_version.to_string()
+    };
+
     let tag = format!("v{}", version);
+    let is_pre_release = version.contains('-');
 
     // Read current workspace version from root Cargo.toml
     let cargo_toml = std::fs::read_to_string("Cargo.toml")?;
@@ -446,6 +567,9 @@ fn release(version: String) -> Result<()> {
         .unwrap_or("unknown");
 
     println!("Current: {} → New: {}", current, version);
+    if is_pre_release {
+        println!("  (pre-release)");
+    }
 
     // Check working tree is clean
     let status = cmd("git", &["status", "--porcelain"])?;
@@ -463,7 +587,10 @@ fn release(version: String) -> Result<()> {
 
     // Commit
     cmd("git", &["add", "Cargo.toml"])?;
-    cmd("git", &["commit", "-m", &format!("chore(release): {}", tag)])?;
+    cmd(
+        "git",
+        &["commit", "-m", &format!("chore(release): {}", tag)],
+    )?;
 
     // Tag
     cmd("git", &["tag", &tag])?;
@@ -472,7 +599,14 @@ fn release(version: String) -> Result<()> {
     cmd("git", &["push", "origin", "main"])?;
     cmd("git", &["push", "origin", &tag])?;
 
-    println!("✅ Released {} — changelog and fos_client PR will be created automatically", tag);
+    if is_pre_release {
+        println!("✅ Released {} (pre-release)", tag);
+    } else {
+        println!(
+            "✅ Released {} — changelog and campfire PR will be created automatically",
+            tag
+        );
+    }
     Ok(())
 }
 
@@ -487,4 +621,16 @@ fn cmd(program: &str, args: &[&str]) -> Result<String> {
         );
     }
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn next_pre_number(base: &str, pre_type: &str) -> Result<u32> {
+    let pattern = format!("v{}-{}.*", base, pre_type);
+    let output = Command::new("git").args(["tag", "-l", &pattern]).output()?;
+    let tags = String::from_utf8_lossy(&output.stdout);
+    let max = tags
+        .lines()
+        .filter_map(|tag| tag.rsplit('.').next()?.parse::<u32>().ok())
+        .max()
+        .unwrap_or(0);
+    Ok(max + 1)
 }

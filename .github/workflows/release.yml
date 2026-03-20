@@ -80,6 +80,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           body_path: RELEASE_NOTES.md
+          prerelease: ${{ contains(github.ref_name, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -122,6 +123,7 @@ jobs:
           path: campfire
 
       - name: Create PR in campfire
+        if: "!contains(github.ref_name, '-')"
         env:
           GH_TOKEN: ${{ secrets.FOC_CLIENT_TOKEN }}
         run: |

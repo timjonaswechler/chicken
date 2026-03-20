@@ -54,7 +54,7 @@ jobs:
             TABLE="${TABLE}| $crate | ${feat:--} | ${lines}% | ${funcs}% | ${branches}% |\n"
           done
           echo "table<<EOF" >> $GITHUB_OUTPUT
-          printf "$TABLE" >> $GITHUB_OUTPUT
+          printf '%b' "$TABLE" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
       # ─── GitHub Release ───────────────────────────────────────────────────────

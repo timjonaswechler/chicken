@@ -585,7 +585,19 @@ fn release(version: String, pre: bool, alpha: bool, rc: bool) -> Result<()> {
     );
     std::fs::write("Cargo.toml", updated)?;
 
-    // Commit
+    // Run tests before committing — if tests fail, restore Cargo.toml
+    println!("\nRunning tests...");
+    let test_status = Command::new("cargo")
+        .args(["xtask", "test", "--ci"])
+        .status()?;
+
+    if !test_status.success() {
+        // Restore original Cargo.toml
+        std::fs::write("Cargo.toml", &cargo_toml)?;
+        bail!("Tests failed. Cargo.toml restored. Fix issues and retry.");
+    }
+
+    // Tests passed — commit, tag, push
     cmd("git", &["add", "Cargo.toml"])?;
     cmd(
         "git",

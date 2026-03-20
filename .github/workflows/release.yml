@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
   contents: write
@@ -43,7 +43,11 @@ jobs:
       - name: Build coverage table
         id: coverage
         run: |
-          TABLE="| Crate | Feature | Lines | Functions | Branches |\n|-------|---------|-------|-----------|----------|\n"
+          echo "## Code Coverage" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Crate | Feature | Lines | Functions | Branches |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|---------|-------|-----------|----------|" >> $GITHUB_STEP_SUMMARY
+
           for file in cov-*.json; do
             name=$(basename "$file" .json | sed 's/cov-//')
             lines=$(jq -r '.data[0].totals.lines.percent // 0 | . * 10 | round | . / 10' "$file")
@@ -51,7 +55,7 @@ jobs:
             branches=$(jq -r '.data[0].totals.branches.percent // 0 | . * 10 | round | . / 10' "$file")
             crate=$(echo "$name" | cut -d- -f1-2 | sed 's/-/ /g')
             feat=$(echo "$name" | cut -d- -f3)
-            TABLE="${TABLE}| $crate | ${feat:--} | ${lines}% | ${funcs}% | ${branches}% |\n"
+            echo "| $crate | ${feat:--} | ${lines}% | ${funcs}% | ${branches}% |" >> $GITHUB_STEP_SUMMARY
           done
           echo "table<<EOF" >> $GITHUB_OUTPUT
           printf '%b' "$TABLE" >> $GITHUB_OUTPUT
@@ -65,7 +69,7 @@ jobs:
           echo "" >> RELEASE_NOTES.md
           echo "## Code Coverage" >> RELEASE_NOTES.md
           echo "" >> RELEASE_NOTES.md
-          printf "${{ steps.coverage.outputs.table }}" >> RELEASE_NOTES.md
+          printf '%b' "${{ steps.coverage.outputs.table }}" >> RELEASE_NOTES.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

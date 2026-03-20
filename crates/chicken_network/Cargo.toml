@@ -27,6 +27,7 @@ chicken_settings = { workspace = true }
 chicken_settings_content = { workspace = true }
 
 anyhow = "1.0"
+dirs = "5"
 
 # Kryptographie für Ed25519 Challenge-Response Auth
 ed25519-dalek = { version = "2", features = ["rand_core"] }

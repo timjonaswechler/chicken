@@ -3,7 +3,8 @@ use {
     bevy::prelude::*,
     bevy_replicon::prelude::*,
     chicken_protocols::{ClientAuthResponse, ClientIdentityHello, ServerAuthChallenge, ServerAuthResult},
-    chicken_settings_content::{BlacklistEntry, ServerAccessSettings},
+    chicken_settings::SettingsLoader,
+    chicken_settings_content::{BlacklistEntry, PlayerRole, PlayerRoles, ServerAccessSettings},
     ed25519_dalek::{Signature, Verifier, VerifyingKey},
     rand::{RngCore, rngs::OsRng},
     sha2::{Digest, Sha256},
@@ -89,11 +90,14 @@ fn handle_client_identity_hello(
 
 /// Phase 2, Schritt 2: Client schickt Signatur → Server verifiziert, prüft Zugangsbedingungen und sendet Ergebnis.
 fn handle_client_auth_response(
+    mut commands: Commands,
     mut response_reader: MessageReader<FromClient<ClientAuthResponse>>,
     mut result_writer: MessageWriter<ToClients<ServerAuthResult>>,
     mut pending_auths: ResMut<PendingAuths>,
     mut player_registry: ResMut<PlayerRegistry>,
+    mut player_roles: ResMut<PlayerRoles>,
     settings: Res<ServerAccessSettings>,
+    loader: Res<SettingsLoader>,
 ) {
     for FromClient { client_id, message, .. } in response_reader.read() {
         let pending = match pending_auths.0.remove(client_id) {
@@ -238,6 +242,7 @@ fn handle_client_auth_response(
                 }
 
                 // --- Authentifizierung erfolgreich ---
+                let entity = client_id.entity().unwrap_or(Entity::PLACEHOLDER);
                 player_registry.0.insert(
                     *client_id,
                     AuthenticatedPlayer {
@@ -246,10 +251,29 @@ fn handle_client_auth_response(
                         steam_id: pending.steam_id,
                         public_key: pending.public_key,
                         // ClientId::Client(entity) — entity direkt aus ClientId ableitbar.
-                        entity: client_id.entity().unwrap_or(Entity::PLACEHOLDER),
+                        entity,
                     },
                 );
-                info!("Client {:?} authentifiziert: player_id={}", client_id, &player_id[..16]);
+
+                // --- Rolle zuweisen ---
+                let role = if let Some(&stored) = player_roles.roles.get(&player_id) {
+                    stored
+                } else if player_roles.has_no_owner() {
+                    // Erster Spieler wird Owner
+                    info!("Erster Spieler {} wird Owner", &player_id[..16]);
+                    player_roles.roles.insert(player_id.clone(), PlayerRole::Owner);
+                    loader.save::<PlayerRoles>(&player_roles);
+                    PlayerRole::Owner
+                } else {
+                    PlayerRole::Player
+                };
+                commands.entity(entity).insert(role);
+                info!(
+                    "Client {:?} authentifiziert: player_id={} role={:?}",
+                    client_id,
+                    &player_id[..16],
+                    role
+                );
                 result_writer.write(ToClients {
                     mode: SendMode::Direct(*client_id),
                     message: ServerAuthResult {

@@ -1,5 +1,7 @@
 pub mod networking;
+pub mod role_store;
 pub mod server_access;
+pub use role_store::{PlayerRole, PlayerRoles};
 pub use server_access::{BlacklistEntry, ServerAccessSettings};
 
 use bevy_ecs::prelude::*;

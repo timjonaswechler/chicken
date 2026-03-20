@@ -35,19 +35,10 @@ jobs:
         with:
           tool: cargo-llvm-cov,git-cliff
 
-      # ─── Tests ───────────────────────────────────────────────────────────────
+      # ─── Tests & Coverage ─────────────────────────────────────────────────
 
-      - name: Run tests
-        run: cargo xtask test --ci
-
-      # ─── Coverage ────────────────────────────────────────────────────────────
-
-      - name: Generate coverage
-        run: |
-          cargo llvm-cov --package chicken_states --features hosted   --json --output-path cov-states-hosted.json
-          cargo llvm-cov --package chicken_states --features headless --json --output-path cov-states-headless.json
-          cargo llvm-cov --package chicken_protocols                  --json --output-path cov-protocols.json
-          cargo llvm-cov --package chicken_settings                   --json --output-path cov-settings.json
+      - name: Test & Coverage
+        run: cargo xtask test --ci --coverage
 
       - name: Build coverage table
         id: coverage

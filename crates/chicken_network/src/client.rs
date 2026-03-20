@@ -1,10 +1,12 @@
+pub(crate) mod auth;
 pub(crate) mod discovery;
 
 use bevy_replicon::prelude::Replicated;
+pub use auth::LocalIdentity;
 pub use discovery::{DiscoveredServers, DiscoveryControl, DiscoveryTask};
 
 use {
-    crate::{server::local::LocalClient, shared::PlayerNameMessage},
+    crate::server::local::LocalClient,
     aeronet::io::{
         Session,
         connection::{Disconnect, Disconnected},
@@ -12,8 +14,12 @@ use {
     aeronet_io::connection::DisconnectReason,
     aeronet_replicon::client::AeronetRepliconClient,
     aeronet_webtransport::client::{WebTransportClient, WebTransportClientPlugin},
+    auth::ClientAuthPlugin,
     bevy::prelude::*,
+    bevy_replicon::prelude::*,
+    chicken_identity::PlayerIdentity,
     chicken_notifications::Notify,
+    chicken_protocols::ClientIdentityHello,
     chicken_states::{
         events::session::{SetConnectingStep, SetDisconnectingStep, SetSyncingStep},
         states::session::{ClientConnectionStatus, ConnectingStep, DisconnectingStep, SyncingStep},
@@ -26,7 +32,7 @@ pub(crate) struct ClientLogicPlugin;
 
 impl Plugin for ClientLogicPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((WebTransportClientPlugin, ClientDiscoveryPlugin))
+        app.add_plugins((WebTransportClientPlugin, ClientDiscoveryPlugin, ClientAuthPlugin))
             .init_resource::<ClientTarget>()
             .add_systems(
                 OnEnter(ClientConnectionStatus::Connecting),
@@ -254,38 +260,58 @@ fn on_client_connected(
     trigger: On<Add, Session>,
     names: Query<&Name>,
     mut commands: Commands,
-    mut ping: MessageWriter<PlayerNameMessage>,
+    mut hello_writer: MessageWriter<ClientIdentityHello>,
+    identity: Option<Res<LocalIdentity>>,
+    player_identity: Option<Res<PlayerIdentity>>,
 ) {
     let target = trigger.event_target();
 
     let name = names.get(target).ok();
     if let Some(name) = name {
         info!("Connected as {}", name.as_str());
-        ping.write(PlayerNameMessage {
-            player_name: name.as_str().to_string(),
-        });
     } else {
         warn!("Session {} missing Name component", target);
     }
 
-    // Session established → OpeningConnection → Authenticating (identity sent above)
+    let Some(identity) = identity else {
+        warn!("LocalIdentity nicht verfügbar beim Verbinden — Auth wird fehlschlagen");
+        commands.trigger(SetConnectingStep::Next);
+        return;
+    };
+
+    let display_name = player_identity
+        .as_ref()
+        .map(|pi| pi.display_name.clone())
+        .unwrap_or_else(|| format!("Player-{}", &identity.player_id[..8]));
+
+    let steam_id = player_identity.as_ref().and_then(|pi| pi.steam_id);
+
+    hello_writer.write(ClientIdentityHello {
+        public_key: identity.verifying_key_bytes(),
+        display_name,
+        steam_id,
+    });
+
+    // Session established → OpeningConnection → Authenticating
     commands.trigger(SetConnectingStep::Next);
 }
 
-/// Advances ConnectingStep while waiting for server auth response.
-/// `OpeningConnection` is driven by `on_client_connected` (On<Add, Session>).
-/// `Authenticating` and `WaitingForAccept` are placeholder auto-advances until
-/// a real server accept/reject message is implemented (see TODO in ConnectingStep).
+/// Verwaltet ConnectingStep-Übergänge.
+/// `OpeningConnection` → `Authenticating`: driven by on_client_connected (On<Add, Session>).
+/// `Authenticating` → `WaitingForAccept`: driven by client/auth.rs (ServerAuthChallenge empfangen).
+/// `WaitingForAccept` → `Ready`: driven by client/auth.rs (ServerAuthResult empfangen).
 fn advance_connecting_steps(step: Option<Res<State<ConnectingStep>>>, mut commands: Commands) {
     let Some(step) = step else { return };
 
     match step.get() {
         ConnectingStep::OpeningConnection => {
-            // Waiting for On<Add, Session> — driven by on_client_connected
+            // Wartet auf On<Add, Session> — driven by on_client_connected
         }
-        ConnectingStep::Authenticating | ConnectingStep::WaitingForAccept => {
-            // TODO: replace with real server accept/reject message
-            commands.trigger(SetConnectingStep::Next);
+        ConnectingStep::Authenticating => {
+            // Wartet auf ServerAuthChallenge → ClientAuthResponse in client/auth.rs
+        }
+        ConnectingStep::WaitingForAccept => {
+            // Wartet auf ServerAuthResult in client/auth.rs
         }
         ConnectingStep::Ready => {
             commands.trigger(SetConnectingStep::Done);

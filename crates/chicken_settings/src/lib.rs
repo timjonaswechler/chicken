@@ -99,6 +99,7 @@ pub use plugin::{
     SettingsStorageResource,
 };
 pub use storage::{AsyncFileStorage, SettingsStorage, StorageHandle};
+pub use chicken_settings_edit::{EditError, SurgicalEditor, TomlEditor, update_toml_value};
 
 use bevy_ecs::prelude::*;
 use serde::{Serialize, de::DeserializeOwned};

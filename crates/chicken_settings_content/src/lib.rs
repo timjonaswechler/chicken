@@ -1,4 +1,6 @@
 pub mod networking;
+pub mod server_access;
+pub use server_access::{BlacklistEntry, ServerAccessSettings};
 
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};

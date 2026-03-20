@@ -290,6 +290,7 @@ fn on_client_connected(
         public_key: identity.verifying_key_bytes(),
         display_name,
         steam_id,
+        password: None, // TODO: aus UI-Eingabe befüllen sobald Passwort-Dialog implementiert ist
     });
 
     // Session established → OpeningConnection → Authenticating

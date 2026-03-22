@@ -2,7 +2,10 @@ use {
     aeronet::io::connection::Disconnect,
     bevy::prelude::*,
     bevy_replicon::prelude::*,
-    chicken_protocols::{ClientAuthResponse, ClientIdentityHello, ServerAuthChallenge, ServerAuthResult},
+    chicken_notifications::Notify,
+    chicken_protocols::{
+        ClientAuthResponse, ClientIdentityHello, ServerAuthChallenge, ServerAuthResult,
+    },
     chicken_settings::SettingsLoader,
     chicken_settings_content::{BlacklistEntry, PlayerRole, PlayerRoles, ServerAccessSettings},
     ed25519_dalek::{Signature, Verifier, VerifyingKey},
@@ -56,6 +59,17 @@ pub struct AuthenticatedPlayer {
     /// Bevy-Entity des Client-Session-Objekts — wird für Kick-Befehle (Disconnect) benötigt.
     /// In bevy_replicon ist ClientId::Client(entity), daher direkt aus der ClientId ableitbar.
     pub entity: Entity,
+    /// Aktuelle Rolle des Spielers auf diesem Server.
+    pub role: PlayerRole,
+}
+
+/// Wird gefeuert wenn einem Spieler (neu oder geändert) eine Rolle zugewiesen wird.
+#[derive(Event, Debug, Clone)]
+pub struct PlayerRoleAssigned {
+    pub client_id: ClientId,
+    pub player_id: String,
+    pub entity: Entity,
+    pub role: PlayerRole,
 }
 
 /// Phase 2, Schritt 1: Client schickt seinen Public Key → Server generiert Nonce und schickt Challenge.
@@ -64,7 +78,10 @@ fn handle_client_identity_hello(
     mut challenge_writer: MessageWriter<ToClients<ServerAuthChallenge>>,
     mut pending_auths: ResMut<PendingAuths>,
 ) {
-    for FromClient { client_id, message, .. } in hello_reader.read() {
+    for FromClient {
+        client_id, message, ..
+    } in hello_reader.read()
+    {
         let mut nonce = [0u8; 32];
         OsRng.fill_bytes(&mut nonce);
 
@@ -99,11 +116,17 @@ fn handle_client_auth_response(
     settings: Res<ServerAccessSettings>,
     loader: Res<SettingsLoader>,
 ) {
-    for FromClient { client_id, message, .. } in response_reader.read() {
+    for FromClient {
+        client_id, message, ..
+    } in response_reader.read()
+    {
         let pending = match pending_auths.0.remove(client_id) {
             Some(p) => p,
             None => {
-                warn!("ClientAuthResponse von unbekanntem Client {:?} — kein pending Auth", client_id);
+                warn!(
+                    "ClientAuthResponse von unbekanntem Client {:?} — kein pending Auth",
+                    client_id
+                );
                 result_writer.write(ToClients {
                     mode: SendMode::Direct(*client_id),
                     message: ServerAuthResult {
@@ -117,11 +140,12 @@ fn handle_client_auth_response(
         };
 
         let verify_result = (|| -> Result<(), String> {
-            let sig_bytes: [u8; 64] = message
-                .signature
-                .as_slice()
-                .try_into()
-                .map_err(|_| format!("Signatur hat falsche Länge: {} Bytes", message.signature.len()))?;
+            let sig_bytes: [u8; 64] = message.signature.as_slice().try_into().map_err(|_| {
+                format!(
+                    "Signatur hat falsche Länge: {} Bytes",
+                    message.signature.len()
+                )
+            })?;
             let vk = VerifyingKey::from_bytes(&pending.public_key)
                 .map_err(|e| format!("Ungültiger Public Key: {e}"))?;
             let sig = Signature::from_bytes(&sig_bytes);
@@ -137,7 +161,10 @@ fn handle_client_auth_response(
                 // Im Debug-Build erlaubt (z.B. hosted Server + Client auf gleicher Maschine).
                 #[cfg(not(debug_assertions))]
                 if player_registry.0.values().any(|p| p.player_id == player_id) {
-                    warn!("Verbindung abgelehnt: player_id {} bereits verbunden", &player_id[..16]);
+                    warn!(
+                        "Verbindung abgelehnt: player_id {} bereits verbunden",
+                        &player_id[..16]
+                    );
                     result_writer.write(ToClients {
                         mode: SendMode::Direct(*client_id),
                         message: ServerAuthResult {
@@ -150,7 +177,10 @@ fn handle_client_auth_response(
                 }
                 #[cfg(debug_assertions)]
                 if player_registry.0.values().any(|p| p.player_id == player_id) {
-                    warn!("Selbe player_id {} verbindet sich erneut — im Debug-Build erlaubt", &player_id[..16]);
+                    warn!(
+                        "Selbe player_id {} verbindet sich erneut — im Debug-Build erlaubt",
+                        &player_id[..16]
+                    );
                 }
 
                 // --- Zugangskontrollen (Phase 3: Autorisierung) ---
@@ -181,7 +211,10 @@ fn handle_client_auth_response(
                         || (entry.steam_id.is_some() && entry.steam_id == pending.steam_id)
                 });
                 if is_blacklisted {
-                    warn!("Verbindung abgelehnt: player_id {} ist gebannt", &player_id[..16]);
+                    warn!(
+                        "Verbindung abgelehnt: player_id {} ist gebannt",
+                        &player_id[..16]
+                    );
                     result_writer.write(ToClients {
                         mode: SendMode::Direct(*client_id),
                         message: ServerAuthResult {
@@ -218,8 +251,7 @@ fn handle_client_auth_response(
                 if settings.password_protected {
                     let hash_ok = match (&pending.password, &settings.password_hash) {
                         (Some(client_pw), Some(server_hash)) => {
-                            let client_hash =
-                                hex::encode(Sha256::digest(client_pw.as_bytes()));
+                            let client_hash = hex::encode(Sha256::digest(client_pw.as_bytes()));
                             client_hash == *server_hash
                         }
                         _ => false,
@@ -241,8 +273,20 @@ fn handle_client_auth_response(
                     }
                 }
 
-                // --- Authentifizierung erfolgreich ---
+                // --- Rolle bestimmen ---
                 let entity = client_id.entity().unwrap_or(Entity::PLACEHOLDER);
+                let role = if let Some(&stored) = player_roles.roles.get(&player_id) {
+                    stored
+                } else if player_roles.has_no_owner() {
+                    player_roles.roles.insert(player_id.clone(), PlayerRole::Owner);
+                    loader.save::<PlayerRoles>(&player_roles);
+                    PlayerRole::Owner
+                } else {
+                    PlayerRole::Player
+                };
+
+                // --- Authentifizierung erfolgreich ---
+                let display_name = pending.display_name.clone();
                 player_registry.0.insert(
                     *client_id,
                     AuthenticatedPlayer {
@@ -252,28 +296,23 @@ fn handle_client_auth_response(
                         public_key: pending.public_key,
                         // ClientId::Client(entity) — entity direkt aus ClientId ableitbar.
                         entity,
+                        role,
                     },
                 );
-
-                // --- Rolle zuweisen ---
-                let role = if let Some(&stored) = player_roles.roles.get(&player_id) {
-                    stored
-                } else if player_roles.has_no_owner() {
-                    // Erster Spieler wird Owner
-                    info!("Erster Spieler {} wird Owner", &player_id[..16]);
-                    player_roles.roles.insert(player_id.clone(), PlayerRole::Owner);
-                    loader.save::<PlayerRoles>(&player_roles);
-                    PlayerRole::Owner
-                } else {
-                    PlayerRole::Player
-                };
                 commands.entity(entity).insert(role);
                 info!(
-                    "Client {:?} authentifiziert: player_id={} role={:?}",
-                    client_id,
+                    "[auth] player_id={} display_name={:?} role={:?} entity={:?}",
                     &player_id[..16],
-                    role
+                    display_name,
+                    role,
+                    entity
                 );
+                commands.trigger(PlayerRoleAssigned {
+                    client_id: *client_id,
+                    player_id: player_id.clone(),
+                    entity,
+                    role,
+                });
                 result_writer.write(ToClients {
                     mode: SendMode::Direct(*client_id),
                     message: ServerAuthResult {
@@ -314,10 +353,7 @@ fn enforce_blacklist_on_connected(
                 || (entry.steam_id.is_some() && entry.steam_id == player.steam_id)
         });
         if is_blacklisted {
-            warn!(
-                "Gebannter Spieler '{}' wird getrennt.",
-                player.display_name
-            );
+            warn!("Gebannter Spieler '{}' wird getrennt.", player.display_name);
             commands.trigger(Disconnect::new(player.entity, "Du wurdest gebannt."));
         }
     }

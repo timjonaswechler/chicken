@@ -52,7 +52,3 @@ impl Plugin for ChickenPlugin {
         // .add_systems(Startup, test_identity);
     }
 }
-
-fn test_identity(identity: Res<identity::PlayerIdentity>) {
-    error!("Identity: {:?}", identity);
-}

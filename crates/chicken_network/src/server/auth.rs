@@ -8,6 +8,7 @@ use {
     },
     chicken_settings::SettingsLoader,
     chicken_settings_content::{BlacklistEntry, PlayerRole, PlayerRoles, ServerAccessSettings},
+    chicken_states::states::session::ServerStatus,
     ed25519_dalek::{Signature, Verifier, VerifyingKey},
     rand::{RngCore, rngs::OsRng},
     sha2::{Digest, Sha256},
@@ -30,6 +31,9 @@ impl Plugin for ServerAuthPlugin {
                 )
                     .chain(),
             );
+
+        #[cfg(feature = "client")]
+        app.add_systems(OnEnter(ServerStatus::Running), register_local_player);
     }
 }
 
@@ -335,6 +339,58 @@ fn handle_client_auth_response(
             }
         }
     }
+}
+
+/// Registriert den lokalen Host-Spieler in der PlayerRegistry unter `ClientId::Server`.
+/// Wird nur im hosted Modus (feature = "client") ausgeführt.
+#[cfg(feature = "client")]
+fn register_local_player(
+    mut player_registry: ResMut<PlayerRegistry>,
+    local_identity: Option<Res<crate::client::auth::LocalIdentity>>,
+    player_identity: Option<Res<chicken_identity::PlayerIdentity>>,
+    mut player_roles: ResMut<PlayerRoles>,
+    loader: Res<SettingsLoader>,
+) {
+    let Some(local_id) = local_identity else {
+        warn!("[auth] LocalIdentity nicht verfügbar — lokaler Spieler kann nicht registriert werden");
+        return;
+    };
+
+    let display_name = player_identity
+        .as_ref()
+        .map(|pi| pi.display_name.clone())
+        .unwrap_or_else(|| format!("Player-{}", &local_id.player_id[..8]));
+    let steam_id = player_identity.as_ref().and_then(|pi| pi.steam_id);
+
+    let role = if let Some(&stored) = player_roles.roles.get(&local_id.player_id) {
+        stored
+    } else if player_roles.has_no_owner() {
+        player_roles
+            .roles
+            .insert(local_id.player_id.clone(), PlayerRole::Owner);
+        loader.save::<PlayerRoles>(&player_roles);
+        PlayerRole::Owner
+    } else {
+        PlayerRole::Owner
+    };
+
+    player_registry.0.insert(
+        ClientId::Server,
+        AuthenticatedPlayer {
+            player_id: local_id.player_id.clone(),
+            display_name: display_name.clone(),
+            steam_id,
+            public_key: local_id.verifying_key_bytes(),
+            entity: Entity::PLACEHOLDER,
+            role,
+        },
+    );
+
+    info!(
+        "[auth] Lokaler Spieler '{}' als ClientId::Server registriert (player_id={})",
+        display_name,
+        &local_id.player_id[..16]
+    );
 }
 
 /// Trennt alle aktuell verbundenen Spieler, die inzwischen auf der Blacklist stehen.

@@ -1,24 +1,22 @@
 use {
+    crate::server::auth::PlayerRegistry,
     bevy::prelude::*,
     bevy_replicon::prelude::*,
     chicken_protocols::{
-        ChatCommandInfo, ChatPlayerInfo, ChatErrorType,
-        ClientChat, ClientChatHistoryRequest,
-        ServerChat, ServerChatError, ServerChatHistoryResponse, ServerChatAutocomplete,
-        CHAT_MESSAGE_MAX_LENGTH, CHAT_MENTION_PREFIX,
-        extract_command,
+        CHAT_MENTION_PREFIX, CHAT_MESSAGE_MAX_LENGTH, ChatCommandInfo, ChatErrorType,
+        ChatPlayerInfo, ClientChat, ClientChatHistoryRequest, ServerChat, ServerChatAutocomplete,
+        ServerChatError, ServerChatHistoryResponse, extract_command,
     },
     chicken_states::states::session::ServerStatus,
-    crate::server::auth::PlayerRegistry,
     std::collections::VecDeque,
 };
 
 pub(crate) struct ServerChatPlugin;
 
 /// Server-seitige maximale Chat-History im RAM
-const CHAT_HISTORY_SIZE: usize = 1024;
+pub const CHAT_HISTORY_SIZE: usize = 1024;
 /// Maximale Anzahl Nachrichten die ein Client bei History-Request erhält
-const CHAT_CLIENT_HISTORY_SIZE: usize = 128;
+pub const CHAT_CLIENT_HISTORY_SIZE: usize = 128;
 
 impl Plugin for ServerChatPlugin {
     fn build(&self, app: &mut App) {
@@ -54,7 +52,10 @@ fn handle_client_chat(
     mut chat_history: ResMut<ChatHistory>,
     player_registry: Res<PlayerRegistry>,
 ) {
-    for FromClient { client_id, message, .. } in client_chat_events.read() {
+    for FromClient {
+        client_id, message, ..
+    } in client_chat_events.read()
+    {
         let text = message.text.trim();
 
         if text.is_empty() {
@@ -131,7 +132,9 @@ fn handle_client_chat_history_request(
     player_registry: Res<PlayerRegistry>,
 ) {
     for FromClient { client_id, .. } in history_requests.read() {
-        let own_name = player_registry.0.get(client_id)
+        let own_name = player_registry
+            .0
+            .get(client_id)
             .map(|p| p.display_name.clone())
             .unwrap_or_default();
 
@@ -149,8 +152,13 @@ fn broadcast_autocomplete_data(
     autocomplete_data: Res<ChatAutocompleteData>,
     player_registry: Res<PlayerRegistry>,
 ) {
-    let players: Vec<ChatPlayerInfo> = player_registry.0
+    // Deduplizierung nach player_id — verhindert Doppeleinträge wenn
+    // derselbe Spieler als ClientId::Server und ClientId::Client registriert ist.
+    let mut seen_ids = std::collections::HashSet::new();
+    let players: Vec<ChatPlayerInfo> = player_registry
+        .0
         .values()
+        .filter(|p| seen_ids.insert(p.player_id.clone()))
         .map(|p| ChatPlayerInfo {
             name: p.display_name.clone(),
             steam_id: p.steam_id,
@@ -166,10 +174,7 @@ fn broadcast_autocomplete_data(
     });
 }
 
-fn filter_relevant_chat_history(
-    history: &VecDeque<ServerChat>,
-    own_name: &str,
-) -> Vec<ServerChat> {
+fn filter_relevant_chat_history(history: &VecDeque<ServerChat>, own_name: &str) -> Vec<ServerChat> {
     let mention = format!("{}{}", CHAT_MENTION_PREFIX, own_name);
 
     let mut mentioned: Vec<&ServerChat> = history

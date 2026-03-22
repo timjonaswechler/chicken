@@ -51,6 +51,10 @@ impl Plugin for ClientLogicPlugin {
                 on_client_running,
             )
             .add_systems(
+                OnEnter(ClientConnectionStatus::Playing),
+                on_client_playing,
+            )
+            .add_systems(
                 Update,
                 client_disconnecting.run_if(in_state(ClientConnectionStatus::Disconnecting)),
             );
@@ -337,6 +341,13 @@ fn client_syncing(step: Option<Res<State<SyncingStep>>>, mut commands: Commands)
 fn on_client_running(mut commands: Commands) {
     info!("Client connected, starting sync");
     commands.trigger(SetSyncingStep::Start);
+}
+
+fn on_client_playing(identity: Option<Res<PlayerIdentity>>) {
+    let name = identity
+        .map(|id| id.display_name.clone())
+        .unwrap_or_else(|| "Unknown".to_string());
+    info!("Player '{}' is now in-game (Playing)", name);
 }
 
 fn client_disconnecting(

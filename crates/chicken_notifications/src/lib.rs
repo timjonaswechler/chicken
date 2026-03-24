@@ -3,20 +3,20 @@ use bevy::{
     prelude::{App, Event, On, Plugin, Res, ResMut, Resource, Time, Timer, TimerMode, Update},
 };
 
-#[cfg(feature = "debug")]
-use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
+#[cfg(feature = "ui")]
+use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 
 pub struct ChickenNotificationPlugin;
 
 impl Plugin for ChickenNotificationPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<NotificationQueue>()
-            .add_observer(on_notify)
-            .add_systems(Update, notification_lifecycle);
+            .add_observer(on_notify);
 
-        #[cfg(feature = "debug")]
+        #[cfg(feature = "ui")]
         {
-            app.add_systems(EguiPrimaryContextPass, ui_notification_system);
+            app.add_systems(Update, notification_lifecycle)
+                .add_systems(EguiPrimaryContextPass, ui_notification_system);
         }
     }
 }
@@ -85,11 +85,11 @@ pub fn on_notify(trigger: On<Notify>, mut queue: ResMut<NotificationQueue>) {
     let msg = event.message.clone();
     let type_ = event.type_;
 
-    // Log based on type
     match type_ {
-        NotificationType::Error => error!("Notification: {}", msg),
-        NotificationType::Warning => warn!("Notification: {}", msg),
-        _ => info!("Notification: {}", msg),
+        NotificationType::Error => error!(target: "notify::error", "{}", msg),
+        NotificationType::Warning => warn!(target: "notify::warn", "{}", msg),
+        NotificationType::Success => info!(target: "notify::success", "{}", msg),
+        NotificationType::Info => info!(target: "notify::info", "{}", msg),
     }
 
     let id = queue.next_id;
@@ -103,6 +103,7 @@ pub fn on_notify(trigger: On<Notify>, mut queue: ResMut<NotificationQueue>) {
     });
 }
 
+#[cfg(feature = "ui")]
 /// System to tick timers and remove expired notifications.
 pub fn notification_lifecycle(time: Res<Time>, mut queue: ResMut<NotificationQueue>) {
     for note in &mut queue.messages {
@@ -111,7 +112,7 @@ pub fn notification_lifecycle(time: Res<Time>, mut queue: ResMut<NotificationQue
     queue.messages.retain(|n| !n.timer.is_finished());
 }
 
-#[cfg(feature = "debug")]
+#[cfg(feature = "ui")]
 /// System to visualize notifications using egui (Temporary UI).
 pub fn ui_notification_system(mut egui: EguiContexts, mut queue: ResMut<NotificationQueue>) {
     let Ok(ctx) = egui.ctx_mut() else {

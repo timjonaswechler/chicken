@@ -28,6 +28,7 @@ hosted = [
     "chicken_states/hosted",
     "chicken_protocols/hosted",
     "chicken_network/client",
+    "chicken_notifications/ui",
 ]
 headless = [
     "chicken_states/headless",
